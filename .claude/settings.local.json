@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(npm install)",
-      "Bash(npx next dev)"
+      "Bash(npx next dev)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ]
   }
 }

@@ -5,68 +5,84 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: { code: string; id: string } }
 ) {
-  await initDb();
-  const db = getDb();
-  const { code, id } = params;
+  try {
+    await initDb();
+    const db = getDb();
+    const { code, id } = params;
 
-  const game = await db.execute({
-    sql: 'SELECT id, started FROM games WHERE code = ?',
-    args: [code.toUpperCase()],
-  });
-
-  const started = game.rows.length > 0 ? (game.rows[0].started as number) : 0;
-
-  const body = await request.json();
-
-  // Allow claiming regardless of started state
-  if (typeof body.claimed_by === 'string') {
-    await db.execute({
-      sql: 'UPDATE players SET claimed_by = ? WHERE id = ?',
-      args: [body.claimed_by, id],
+    const game = await db.execute({
+      sql: 'SELECT id, started FROM games WHERE code = ?',
+      args: [code.toUpperCase()],
     });
-  }
 
-  if (typeof body.is_playing === 'number') {
-    if (started) {
-      return NextResponse.json({ error: 'Tournament has started. Cannot change player status.' }, { status: 400 });
+    const started = game.rows.length > 0 ? (game.rows[0].started as number) : 0;
+
+    const body = await request.json();
+
+    // Allow claiming regardless of started state
+    if (typeof body.claimed_by === 'string') {
+      await db.execute({
+        sql: 'UPDATE players SET claimed_by = ? WHERE id = ?',
+        args: [body.claimed_by, id],
+      });
     }
-    await db.execute({
-      sql: 'UPDATE players SET is_playing = ? WHERE id = ?',
-      args: [body.is_playing, id],
-    });
-  }
 
-  if (typeof body.name === 'string' && body.name.trim().length > 0) {
-    await db.execute({
-      sql: 'UPDATE players SET name = ? WHERE id = ?',
-      args: [body.name.trim(), id],
-    });
-  }
+    if (typeof body.is_playing === 'number') {
+      if (started) {
+        return NextResponse.json({ error: 'Tournament has started. Cannot change player status.' }, { status: 400 });
+      }
+      await db.execute({
+        sql: 'UPDATE players SET is_playing = ? WHERE id = ?',
+        args: [body.is_playing, id],
+      });
+    }
 
-  return NextResponse.json({ success: true });
+    if (typeof body.name === 'string' && body.name.trim().length > 0) {
+      await db.execute({
+        sql: 'UPDATE players SET name = ? WHERE id = ?',
+        args: [body.name.trim(), id],
+      });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (e: unknown) {
+    console.error('PATCH /api/games/[code]/players/[id] error:', e);
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : 'Internal server error' },
+      { status: 500 }
+    );
+  }
 }
 
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { code: string; id: string } }
 ) {
-  await initDb();
-  const db = getDb();
-  const { code, id } = params;
+  try {
+    await initDb();
+    const db = getDb();
+    const { code, id } = params;
 
-  const game = await db.execute({
-    sql: 'SELECT started FROM games WHERE code = ?',
-    args: [code.toUpperCase()],
-  });
+    const game = await db.execute({
+      sql: 'SELECT started FROM games WHERE code = ?',
+      args: [code.toUpperCase()],
+    });
 
-  if (game.rows.length > 0 && (game.rows[0].started as number)) {
-    return NextResponse.json({ error: 'Tournament has started. Cannot remove players.' }, { status: 400 });
+    if (game.rows.length > 0 && (game.rows[0].started as number)) {
+      return NextResponse.json({ error: 'Tournament has started. Cannot remove players.' }, { status: 400 });
+    }
+
+    await db.execute({
+      sql: 'DELETE FROM players WHERE id = ?',
+      args: [id],
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (e: unknown) {
+    console.error('DELETE /api/games/[code]/players/[id] error:', e);
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : 'Internal server error' },
+      { status: 500 }
+    );
   }
-
-  await db.execute({
-    sql: 'DELETE FROM players WHERE id = ?',
-    args: [id],
-  });
-
-  return NextResponse.json({ success: true });
 }
