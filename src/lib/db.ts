@@ -27,8 +27,8 @@ export async function initDb(): Promise<void> {
 
   const db = getDb();
 
-  await db.executeMultiple(`
-    CREATE TABLE IF NOT EXISTS games (
+  await db.execute({
+    sql: `CREATE TABLE IF NOT EXISTS games (
       id TEXT PRIMARY KEY,
       code TEXT UNIQUE NOT NULL,
       name TEXT NOT NULL,
@@ -39,9 +39,12 @@ export async function initDb(): Promise<void> {
       num_rounds INTEGER,
       scheduled_at TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
+    )`,
+    args: [],
+  });
 
-    CREATE TABLE IF NOT EXISTS players (
+  await db.execute({
+    sql: `CREATE TABLE IF NOT EXISTS players (
       id TEXT PRIMARY KEY,
       game_id TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
       name TEXT NOT NULL,
@@ -49,15 +52,21 @@ export async function initDb(): Promise<void> {
       order_num INTEGER NOT NULL DEFAULT 0,
       claimed_by TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
+    )`,
+    args: [],
+  });
 
-    CREATE TABLE IF NOT EXISTS rounds (
+  await db.execute({
+    sql: `CREATE TABLE IF NOT EXISTS rounds (
       id TEXT PRIMARY KEY,
       game_id TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
       round_number INTEGER NOT NULL
-    );
+    )`,
+    args: [],
+  });
 
-    CREATE TABLE IF NOT EXISTS matches (
+  await db.execute({
+    sql: `CREATE TABLE IF NOT EXISTS matches (
       id TEXT PRIMARY KEY,
       round_id TEXT NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
       game_id TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
@@ -69,8 +78,9 @@ export async function initDb(): Promise<void> {
       team1_score INTEGER,
       team2_score INTEGER,
       is_completed INTEGER NOT NULL DEFAULT 0
-    );
-  `);
+    )`,
+    args: [],
+  });
 
   initialized = true;
 }
