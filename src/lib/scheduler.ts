@@ -163,21 +163,25 @@ export function generateRotatingSchedule(
 }
 
 /**
- * Generate a fixed-partners schedule. Players are paired in order:
- * (1,2), (3,4), (5,6), etc. Each team plays every other team.
+ * Generate a fixed-partners schedule. If teamPairings are provided, use those.
+ * Otherwise, players are paired in order: (1,2), (3,4), (5,6), etc.
+ * Each team plays every other team.
  */
 export function generateFixedSchedule(
   playerIds: string[],
-  numCourts: number
+  numCourts: number,
+  teamPairings?: [string, string][]
 ): ScheduleRound[] {
   // Need even number of players, at least 4
   const n = playerIds.length;
   if (n < 4 || n % 2 !== 0) return [];
 
-  // Create teams from consecutive pairs
-  const teams: [string, string][] = [];
-  for (let i = 0; i < n; i += 2) {
-    teams.push([playerIds[i], playerIds[i + 1]]);
+  // Use provided team pairings or create teams from consecutive pairs
+  const teams: [string, string][] = teamPairings || [];
+  if (teams.length === 0) {
+    for (let i = 0; i < n; i += 2) {
+      teams.push([playerIds[i], playerIds[i + 1]]);
+    }
   }
 
   const T = teams.length;
@@ -198,9 +202,9 @@ export function generateFixedSchedule(
       const matchups: [number, number][] = [];
       // Fixed team vs first rotating
       matchups.push([T - 1, rot[0]]);
-      // Pair rest: rot[1] vs rot[T-3], rot[2] vs rot[T-4], etc.
+      // Pair rest from opposite ends: rot[1] vs rot[T-2], rot[2] vs rot[T-3], etc.
       for (let i = 1; i <= (T - 2) / 2; i++) {
-        matchups.push([rot[i], rot[T - 2 - i]]);
+        matchups.push([rot[i], rot[T - 1 - i]]);
       }
       allRoundMatchups.push(matchups);
       // Rotate: move first to end
@@ -225,8 +229,11 @@ export function generateFixedSchedule(
   let roundNum = 1;
 
   for (const rrMatchups of allRoundMatchups) {
-    for (let i = 0; i < rrMatchups.length; i += maxCourts) {
-      const batch = rrMatchups.slice(i, i + maxCourts);
+    // Filter out any self-matches (safety check)
+    const validMatchups = rrMatchups.filter(([a, b]) => a !== b);
+
+    for (let i = 0; i < validMatchups.length; i += maxCourts) {
+      const batch = validMatchups.slice(i, i + maxCourts);
       const matches: ScheduleMatch[] = batch.map(([a, b], idx) => ({
         court: idx + 1,
         team1: teams[a],

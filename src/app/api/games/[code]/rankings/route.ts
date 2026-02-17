@@ -22,9 +22,19 @@ export async function GET(
 
     const gameId = game.rows[0].id as string;
 
+    // Get division info for players
+    const divisionsResult = await db.execute({
+      sql: 'SELECT id, name FROM divisions WHERE game_id = ?',
+      args: [gameId],
+    });
+    const divisionMap = new Map<string, string>();
+    for (const d of divisionsResult.rows) {
+      divisionMap.set(d.id as string, d.name as string);
+    }
+
     // Get all active players
     const players = await db.execute({
-      sql: 'SELECT id, name FROM players WHERE game_id = ? AND is_playing = 1 ORDER BY order_num ASC',
+      sql: 'SELECT id, name, division_id FROM players WHERE game_id = ? AND is_playing = 1 ORDER BY order_num ASC',
       args: [gameId],
     });
 
@@ -75,6 +85,7 @@ export async function GET(
 
     const rankings: Ranking[] = players.rows.map((p) => {
       const s = stats.get(p.id as string)!;
+      const divId = p.division_id as string | null;
       return {
         player_id: p.id as string,
         player_name: p.name as string,
@@ -84,6 +95,8 @@ export async function GET(
         points_against: s.pointsAgainst,
         point_differential: s.pointsFor - s.pointsAgainst,
         games_played: s.gamesPlayed,
+        division_id: divId,
+        division_name: divId ? (divisionMap.get(divId) || null) : null,
       };
     });
 

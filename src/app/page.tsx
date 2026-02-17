@@ -1,11 +1,24 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/components/AuthProvider';
+
+interface MyGame {
+  id: string;
+  code: string;
+  name: string;
+  mode: string;
+  scheduled_at: string | null;
+  is_complete: number;
+  started: number;
+}
 
 export default function Home() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const [view, setView] = useState<'home' | 'create' | 'join'>('home');
+  const [myGames, setMyGames] = useState<MyGame[]>([]);
   const [gameName, setGameName] = useState('');
   const [numCourts, setNumCourts] = useState(2);
   const [mode, setMode] = useState<'rotating' | 'fixed'>('rotating');
@@ -13,6 +26,15 @@ export default function Home() {
   const [joinCode, setJoinCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (user) {
+      fetch(`/api/users/${user.id}/games`)
+        .then((res) => res.json())
+        .then((data) => { if (Array.isArray(data)) setMyGames(data); })
+        .catch(() => {});
+    }
+  }, [user]);
 
   const createGame = async () => {
     if (!gameName.trim()) {
@@ -114,12 +136,12 @@ export default function Home() {
               <label className="block text-sm font-medium text-gray-600 mb-1">
                 Number of Courts
               </label>
-              <div className="flex gap-2">
-                {[1, 2, 3, 4].map((n) => (
+              <div className="grid grid-cols-6 gap-2">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => (
                   <button
                     key={n}
                     onClick={() => setNumCourts(n)}
-                    className={`flex-1 py-3 rounded-xl text-lg font-semibold transition-colors ${
+                    className={`py-3 rounded-xl text-lg font-semibold transition-colors ${
                       numCourts === n
                         ? 'bg-primary-600 text-white'
                         : 'bg-gray-100 text-gray-600 active:bg-gray-200'
@@ -228,8 +250,33 @@ export default function Home() {
   }
 
   // Home view
+  const activeGames = myGames.filter((g) => !g.is_complete);
+
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <div className="min-h-screen flex flex-col items-center justify-center p-4">
+      {/* Auth header */}
+      <div className="w-full max-w-md mb-4 flex justify-end gap-2">
+        {!authLoading && (
+          user ? (
+            <>
+              <button
+                onClick={() => router.push('/dashboard')}
+                className="text-sm text-primary-700 font-medium py-1 px-3 border border-primary-200 rounded-lg"
+              >
+                {user.display_name}
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => router.push('/login')}
+              className="text-sm text-primary-700 font-medium py-1 px-3 border border-primary-200 rounded-lg"
+            >
+              Sign In
+            </button>
+          )
+        )}
+      </div>
+
       <div className="w-full max-w-md space-y-6 text-center">
         <div className="space-y-3">
           <div className="w-24 h-24 mx-auto bg-primary-100 rounded-full flex items-center justify-center">
@@ -256,8 +303,33 @@ export default function Home() {
           </button>
         </div>
 
+        {/* My Active Games */}
+        {user && activeGames.length > 0 && (
+          <div className="pt-4 text-left">
+            <h3 className="font-semibold text-gray-700 mb-2">My Active Games</h3>
+            <div className="space-y-2">
+              {activeGames.map((g) => (
+                <button
+                  key={g.id}
+                  onClick={() => router.push(`/game/${g.code}`)}
+                  className="w-full text-left card active:bg-gray-50 flex items-center justify-between"
+                >
+                  <div>
+                    <p className="font-medium text-sm">{g.name}</p>
+                    <p className="text-xs text-gray-500">
+                      {g.started ? 'In Progress' : 'Not Started'}
+                      {g.scheduled_at && ` — ${new Date(g.scheduled_at).toLocaleDateString()}`}
+                    </p>
+                  </div>
+                  <span className="font-mono text-xs text-primary-700 font-bold">{g.code}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <p className="text-sm text-gray-400 pt-4">
-          Organize round robin tournaments with up to 14 players
+          Organize round robin tournaments with up to 48 players
         </p>
       </div>
     </div>

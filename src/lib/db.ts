@@ -28,6 +28,27 @@ export async function initDb(): Promise<void> {
   const db = getDb();
 
   await db.execute({
+    sql: `CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    args: [],
+  });
+
+  await db.execute({
+    sql: `CREATE TABLE IF NOT EXISTS sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    args: [],
+  });
+
+  await db.execute({
     sql: `CREATE TABLE IF NOT EXISTS games (
       id TEXT PRIMARY KEY,
       code TEXT UNIQUE NOT NULL,
@@ -36,8 +57,10 @@ export async function initDb(): Promise<void> {
       mode TEXT NOT NULL DEFAULT 'rotating',
       schedule_generated INTEGER NOT NULL DEFAULT 0,
       started INTEGER NOT NULL DEFAULT 0,
+      is_complete INTEGER NOT NULL DEFAULT 0,
       num_rounds INTEGER,
       scheduled_at TEXT,
+      created_by TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )`,
     args: [],
@@ -51,7 +74,19 @@ export async function initDb(): Promise<void> {
       is_playing INTEGER NOT NULL DEFAULT 1,
       order_num INTEGER NOT NULL DEFAULT 0,
       claimed_by TEXT,
+      user_id TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    args: [],
+  });
+
+  await db.execute({
+    sql: `CREATE TABLE IF NOT EXISTS teams (
+      id TEXT PRIMARY KEY,
+      game_id TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+      player1_id TEXT NOT NULL REFERENCES players(id),
+      player2_id TEXT NOT NULL REFERENCES players(id),
+      team_name TEXT
     )`,
     args: [],
   });
@@ -81,6 +116,36 @@ export async function initDb(): Promise<void> {
     )`,
     args: [],
   });
+
+  // Divisions table
+  await db.execute({
+    sql: `CREATE TABLE IF NOT EXISTS divisions (
+      id TEXT PRIMARY KEY,
+      game_id TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      court_start INTEGER NOT NULL,
+      court_end INTEGER NOT NULL,
+      color TEXT NOT NULL DEFAULT '#854AAF',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    args: [],
+  });
+
+  // Idempotent column migrations via try/catch
+  const alterStatements = [
+    'ALTER TABLE players ADD COLUMN division_id TEXT',
+    'ALTER TABLE players ADD COLUMN is_here INTEGER NOT NULL DEFAULT 0',
+    "ALTER TABLE players ADD COLUMN role TEXT NOT NULL DEFAULT 'player'",
+    'ALTER TABLE rounds ADD COLUMN division_id TEXT',
+    'ALTER TABLE matches ADD COLUMN division_id TEXT',
+  ];
+  for (const sql of alterStatements) {
+    try {
+      await db.execute({ sql, args: [] });
+    } catch {
+      // Column already exists — ignore
+    }
+  }
 
   initialized = true;
 }

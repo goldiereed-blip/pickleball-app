@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, initDb, generateId } from '@/lib/db';
 import { generateRotatingSchedule, generateFixedSchedule } from '@/lib/scheduler';
-import type { Game, Player } from '@/lib/types';
+import type { Game, Player, Division } from '@/lib/types';
 
 export async function GET(
   request: NextRequest,
@@ -22,6 +22,16 @@ export async function GET(
     }
 
     const gameId = game.rows[0].id as string;
+
+    // Get divisions for name lookup
+    const divisionsResult = await db.execute({
+      sql: 'SELECT id, name FROM divisions WHERE game_id = ?',
+      args: [gameId],
+    });
+    const divisionMap = new Map<string, string>();
+    for (const d of divisionsResult.rows) {
+      divisionMap.set(d.id as string, d.name as string);
+    }
 
     const rounds = await db.execute({
       sql: 'SELECT * FROM rounds WHERE game_id = ? ORDER BY round_number ASC',
@@ -47,7 +57,7 @@ export async function GET(
         args: [round.id as string],
       });
 
-      // Find who is sitting out: players not in any match this round
+      // Find who is sitting out
       const playingIds = new Set<string>();
       for (const m of matches.rows) {
         playingIds.add(m.team1_player1_id as string);
@@ -65,9 +75,13 @@ export async function GET(
         .filter((p) => !playingIds.has(p.id as string))
         .map((p) => p.name as string);
 
+      const roundDivisionId = round.division_id as string | null;
+
       result.push({
         round_number: round.round_number,
         round_id: round.id,
+        division_id: roundDivisionId,
+        division_name: roundDivisionId ? (divisionMap.get(roundDivisionId) || null) : null,
         matches: matches.rows.map((m) => ({
           ...m,
           round_number: round.round_number,
@@ -129,16 +143,10 @@ export async function POST(
     }
 
     // Delete existing schedule
-    await db.execute({
-      sql: 'DELETE FROM matches WHERE game_id = ?',
-      args: [game.id],
-    });
-    await db.execute({
-      sql: 'DELETE FROM rounds WHERE game_id = ?',
-      args: [game.id],
-    });
+    await db.execute({ sql: 'DELETE FROM matches WHERE game_id = ?', args: [game.id] });
+    await db.execute({ sql: 'DELETE FROM rounds WHERE game_id = ?', args: [game.id] });
 
-    // Check for num_rounds limit from request body or game setting
+    // Check for num_rounds limit
     let numRoundsLimit: number | null = null;
     try {
       const body = await request.json();
@@ -146,52 +154,146 @@ export async function POST(
         numRoundsLimit = body.num_rounds;
       }
     } catch {
-      // No body provided, use game setting
+      // No body provided
     }
     if (!numRoundsLimit && game.num_rounds) {
       numRoundsLimit = game.num_rounds as unknown as number;
     }
 
-    // Generate schedule
-    const playerIds = players.map((p) => p.id);
-    let schedule =
-      game.mode === 'rotating'
-        ? generateRotatingSchedule(playerIds, game.num_courts)
-        : generateFixedSchedule(playerIds, game.num_courts);
+    // Check for divisions
+    const divisionsResult = await db.execute({
+      sql: 'SELECT * FROM divisions WHERE game_id = ? ORDER BY court_start ASC',
+      args: [game.id],
+    });
+    const divisions = divisionsResult.rows as unknown as Division[];
 
-    // Limit rounds if specified
-    if (numRoundsLimit && schedule.length > numRoundsLimit) {
-      schedule = schedule.slice(0, numRoundsLimit);
-      // Re-number rounds
-      schedule.forEach((r, i) => { r.roundNumber = i + 1; });
-    }
+    let totalRounds = 0;
 
-    // Save to database
-    for (const round of schedule) {
-      const roundId = generateId();
-      await db.execute({
-        sql: 'INSERT INTO rounds (id, game_id, round_number) VALUES (?, ?, ?)',
-        args: [roundId, game.id, round.roundNumber],
-      });
+    if (divisions.length > 0) {
+      // Division-aware schedule generation
+      for (const division of divisions) {
+        const divPlayers = players.filter((p) => p.division_id === division.id);
+        if (divPlayers.length < 4) continue;
 
-      for (const match of round.matches) {
-        const matchId = generateId();
-        await db.execute({
-          sql: `INSERT INTO matches (id, round_id, game_id, court_number,
-                team1_player1_id, team1_player2_id, team2_player1_id, team2_player2_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          args: [
-            matchId,
-            roundId,
-            game.id,
-            match.court,
-            match.team1[0],
-            match.team1[1],
-            match.team2[0],
-            match.team2[1],
-          ],
-        });
+        const divNumCourts = division.court_end - division.court_start + 1;
+        const divPlayerIds = divPlayers.map((p) => p.id);
+
+        let schedule;
+        if (game.mode === 'fixed') {
+          const teamsResult = await db.execute({
+            sql: 'SELECT player1_id, player2_id FROM teams WHERE game_id = ?',
+            args: [game.id],
+          });
+          const divPlayerIdSet = new Set(divPlayerIds);
+          const teamPairings: [string, string][] = teamsResult.rows
+            .filter((t) => divPlayerIdSet.has(t.player1_id as string) && divPlayerIdSet.has(t.player2_id as string))
+            .map((t) => [t.player1_id as string, t.player2_id as string]);
+          schedule = generateFixedSchedule(divPlayerIds, divNumCourts, teamPairings.length > 0 ? teamPairings : undefined);
+        } else {
+          schedule = generateRotatingSchedule(divPlayerIds, divNumCourts);
+        }
+
+        // Adjust rounds
+        if (numRoundsLimit) {
+          if (schedule.length > numRoundsLimit) {
+            schedule = schedule.slice(0, numRoundsLimit);
+          } else if (schedule.length < numRoundsLimit) {
+            const baseSchedule = [...schedule];
+            while (schedule.length < numRoundsLimit) {
+              const sourceRound = baseSchedule[schedule.length % baseSchedule.length];
+              schedule.push({
+                roundNumber: schedule.length + 1,
+                matches: sourceRound.matches.map((m) => ({ ...m })),
+                sitting: [...sourceRound.sitting],
+              });
+            }
+          }
+          schedule.forEach((r, i) => { r.roundNumber = i + 1; });
+        }
+
+        // Save to database — remap court numbers to division's court range
+        for (const round of schedule) {
+          const roundId = generateId();
+          await db.execute({
+            sql: 'INSERT INTO rounds (id, game_id, round_number, division_id) VALUES (?, ?, ?, ?)',
+            args: [roundId, game.id, round.roundNumber, division.id],
+          });
+
+          for (const match of round.matches) {
+            const matchId = generateId();
+            const remappedCourt = match.court + division.court_start - 1;
+            await db.execute({
+              sql: `INSERT INTO matches (id, round_id, game_id, court_number,
+                    team1_player1_id, team1_player2_id, team2_player1_id, team2_player2_id, division_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              args: [
+                matchId, roundId, game.id, remappedCourt,
+                match.team1[0], match.team1[1], match.team2[0], match.team2[1],
+                division.id,
+              ],
+            });
+          }
+        }
+
+        totalRounds = Math.max(totalRounds, schedule.length);
       }
+    } else {
+      // No divisions — original behavior
+      const playerIds = players.map((p) => p.id);
+      let schedule;
+
+      if (game.mode === 'fixed') {
+        const teamsResult = await db.execute({
+          sql: 'SELECT player1_id, player2_id FROM teams WHERE game_id = ?',
+          args: [game.id],
+        });
+        const teamPairings: [string, string][] = teamsResult.rows.map((t) => [
+          t.player1_id as string, t.player2_id as string,
+        ]);
+        schedule = generateFixedSchedule(playerIds, game.num_courts, teamPairings.length > 0 ? teamPairings : undefined);
+      } else {
+        schedule = generateRotatingSchedule(playerIds, game.num_courts);
+      }
+
+      if (numRoundsLimit) {
+        if (schedule.length > numRoundsLimit) {
+          schedule = schedule.slice(0, numRoundsLimit);
+        } else if (schedule.length < numRoundsLimit) {
+          const baseSchedule = [...schedule];
+          while (schedule.length < numRoundsLimit) {
+            const sourceRound = baseSchedule[schedule.length % baseSchedule.length];
+            schedule.push({
+              roundNumber: schedule.length + 1,
+              matches: sourceRound.matches.map((m) => ({ ...m })),
+              sitting: [...sourceRound.sitting],
+            });
+          }
+        }
+        schedule.forEach((r, i) => { r.roundNumber = i + 1; });
+      }
+
+      for (const round of schedule) {
+        const roundId = generateId();
+        await db.execute({
+          sql: 'INSERT INTO rounds (id, game_id, round_number) VALUES (?, ?, ?)',
+          args: [roundId, game.id, round.roundNumber],
+        });
+
+        for (const match of round.matches) {
+          const matchId = generateId();
+          await db.execute({
+            sql: `INSERT INTO matches (id, round_id, game_id, court_number,
+                  team1_player1_id, team1_player2_id, team2_player1_id, team2_player2_id)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            args: [
+              matchId, roundId, game.id, match.court,
+              match.team1[0], match.team1[1], match.team2[0], match.team2[1],
+            ],
+          });
+        }
+      }
+
+      totalRounds = schedule.length;
     }
 
     // Mark schedule as generated
@@ -200,7 +302,7 @@ export async function POST(
       args: [game.id],
     });
 
-    return NextResponse.json({ rounds: schedule.length, message: 'Schedule generated' });
+    return NextResponse.json({ rounds: totalRounds, message: 'Schedule generated' });
   } catch (e: unknown) {
     console.error('POST /api/games/[code]/schedule error:', e);
     return NextResponse.json(

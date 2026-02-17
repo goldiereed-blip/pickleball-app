@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, initDb } from '@/lib/db';
+import { getCallerRole, canManage } from '@/lib/api-permissions';
 
 export async function PATCH(
   request: NextRequest,
@@ -15,7 +16,12 @@ export async function PATCH(
       args: [code.toUpperCase()],
     });
 
-    const started = game.rows.length > 0 ? (game.rows[0].started as number) : 0;
+    if (game.rows.length === 0) {
+      return NextResponse.json({ error: 'Game not found' }, { status: 404 });
+    }
+
+    const gameId = game.rows[0].id as string;
+    const started = game.rows[0].started as number;
 
     const body = await request.json();
 
@@ -27,9 +33,20 @@ export async function PATCH(
       });
     }
 
+    if (typeof body.user_id === 'string') {
+      await db.execute({
+        sql: 'UPDATE players SET user_id = ? WHERE id = ?',
+        args: [body.user_id, id],
+      });
+    }
+
     if (typeof body.is_playing === 'number') {
+      // Host/cohost can change status even after start (for injured players)
       if (started) {
-        return NextResponse.json({ error: 'Tournament has started. Cannot change player status.' }, { status: 400 });
+        const callerRole = await getCallerRole(gameId);
+        if (!canManage(callerRole)) {
+          return NextResponse.json({ error: 'Tournament has started. Cannot change player status.' }, { status: 400 });
+        }
       }
       await db.execute({
         sql: 'UPDATE players SET is_playing = ? WHERE id = ?',
@@ -41,6 +58,34 @@ export async function PATCH(
       await db.execute({
         sql: 'UPDATE players SET name = ? WHERE id = ?',
         args: [body.name.trim(), id],
+      });
+    }
+
+    // Division assignment
+    if (body.division_id !== undefined) {
+      await db.execute({
+        sql: 'UPDATE players SET division_id = ? WHERE id = ?',
+        args: [body.division_id, id],
+      });
+    }
+
+    // Check-in
+    if (typeof body.is_here === 'number') {
+      await db.execute({
+        sql: 'UPDATE players SET is_here = ? WHERE id = ?',
+        args: [body.is_here, id],
+      });
+    }
+
+    // Role change — only host can change roles
+    if (typeof body.role === 'string' && ['host', 'cohost', 'player'].includes(body.role)) {
+      const callerRole = await getCallerRole(gameId);
+      if (callerRole !== 'host') {
+        return NextResponse.json({ error: 'Only the host can change roles' }, { status: 403 });
+      }
+      await db.execute({
+        sql: 'UPDATE players SET role = ? WHERE id = ?',
+        args: [body.role, id],
       });
     }
 

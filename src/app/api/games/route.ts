@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, initDb, generateCode, generateId } from '@/lib/db';
+import { getSession } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,8 +14,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    if (num_courts < 1 || num_courts > 10) {
-      return NextResponse.json({ error: 'Courts must be between 1 and 10' }, { status: 400 });
+    if (num_courts < 1 || num_courts > 12) {
+      return NextResponse.json({ error: 'Courts must be between 1 and 12' }, { status: 400 });
     }
 
     if (mode !== 'rotating' && mode !== 'fixed') {
@@ -34,12 +35,16 @@ export async function POST(request: NextRequest) {
       code = generateCode();
     }
 
+    // Get current user if logged in
+    const user = await getSession();
+    const createdBy = user?.id || null;
+
     await db.execute({
-      sql: 'INSERT INTO games (id, code, name, num_courts, mode, scheduled_at) VALUES (?, ?, ?, ?, ?, ?)',
-      args: [id, code, name, num_courts, mode, scheduled_at || null],
+      sql: 'INSERT INTO games (id, code, name, num_courts, mode, scheduled_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      args: [id, code, name, num_courts, mode, scheduled_at || null, createdBy],
     });
 
-    return NextResponse.json({ id, code, name, num_courts, mode, scheduled_at: scheduled_at || null });
+    return NextResponse.json({ id, code, name, num_courts, mode, scheduled_at: scheduled_at || null, created_by: createdBy });
   } catch (e: unknown) {
     console.error('POST /api/games error:', e);
     return NextResponse.json(
