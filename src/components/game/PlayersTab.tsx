@@ -271,7 +271,7 @@ export default function PlayersTab({
                       onClick={() => onClaimPlayer(p.id)}
                       className="min-h-[36px] py-1.5 px-2.5 rounded-lg text-xs font-medium bg-blue-100 text-blue-700"
                     >
-                      This is me?
+                      Claim Spot
                     </button>
                   )}
                   {!isStarted && (

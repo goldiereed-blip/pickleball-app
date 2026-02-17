@@ -310,7 +310,8 @@ export default function GamePage() {
   const currentPlayer = players.find((p) => p.claimed_by === deviceId) || null;
 
   const allTabs: Tab[] = ['players'];
-  allTabs.push('divisions');
+  // Divisions tab hidden until ready for production
+  // allTabs.push('divisions');
   allTabs.push('schedule', 'scores', 'rankings');
   if (claimedPlayerId || players.length > 0) allTabs.push('my-games');
 
@@ -335,7 +336,7 @@ export default function GamePage() {
           </button>
         </div>
       )}
-      {game?.is_complete && rankings.length > 0 && (
+      {!!game?.is_complete && rankings.length > 0 && (
         <div className="max-w-lg mx-auto px-4 mt-2">
           <button onClick={shareResults} className="w-full py-2 bg-primary-600 text-white text-sm font-semibold rounded-xl">
             Share Results
