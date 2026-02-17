@@ -154,8 +154,8 @@ export default function PlayersTab({
   };
 
   const getRoleBadge = (role: string) => {
-    if (role === 'host') return <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Host</span>;
-    if (role === 'cohost') return <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Co-host</span>;
+    if (role === 'host') return <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full leading-none">Host</span>;
+    if (role === 'cohost') return <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full leading-none">Co-host</span>;
     return null;
   };
 
@@ -165,7 +165,7 @@ export default function PlayersTab({
     if (!div) return null;
     return (
       <span
-        className="text-xs px-2 py-0.5 rounded-full text-white"
+        className="text-xs px-1.5 py-0.5 rounded-full text-white leading-none"
         style={{ backgroundColor: div.color }}
       >
         {div.name}
@@ -214,91 +214,101 @@ export default function PlayersTab({
 
       {/* Player list */}
       {players.length > 0 && (
-        <div className="card space-y-1">
+        <div className="card space-y-2">
           <h3 className="font-semibold text-gray-700 mb-2">
             Players ({activePlayers.length} active)
           </h3>
           {players.map((p, i) => (
             <div
               key={p.id}
-              className={`flex items-center justify-between py-2 px-3 rounded-lg ${
+              className={`rounded-lg p-3 ${
                 p.is_playing ? 'bg-primary-50' : 'bg-gray-50 opacity-60'
               }`}
             >
-              <div className="flex items-center gap-2 min-w-0 flex-1">
-                <span className="text-sm text-gray-400 w-5 shrink-0">{i + 1}</span>
-                <span className={`font-medium truncate ${p.is_playing ? 'text-gray-900' : 'text-gray-400 line-through'}`}>
+              {/* Row 1: Number + Name + Badges */}
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm text-gray-400 w-5 shrink-0 text-center">{i + 1}</span>
+                <span className={`font-medium text-base ${p.is_playing ? 'text-gray-900' : 'text-gray-400 line-through'}`}>
                   {p.name}
                 </span>
                 {p.claimed_by === deviceId && (
-                  <span className="text-xs bg-primary-100 text-primary-700 px-2 py-0.5 rounded-full shrink-0">You</span>
+                  <span className="text-xs bg-primary-100 text-primary-700 px-1.5 py-0.5 rounded-full leading-none shrink-0">You</span>
                 )}
                 {p.claimed_by && p.claimed_by !== deviceId && (
-                  <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full shrink-0">Claimed</span>
+                  <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full leading-none shrink-0">Claimed</span>
                 )}
                 {getRoleBadge(p.role)}
-                {getDivisionBadge(p.division_id)}
-                {p.is_here ? (
-                  <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full shrink-0">Here</span>
-                ) : null}
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {/* Check-in toggle: player can check themselves in, host/cohost can check anyone */}
-                {(p.claimed_by === deviceId || canManage) && (
-                  <button
-                    onClick={() => toggleHere(p.id, p.is_here)}
-                    className={`py-1 px-2 rounded-lg text-xs font-medium ${
-                      p.is_here
-                        ? 'bg-green-600 text-white'
-                        : 'bg-gray-200 text-gray-500'
-                    }`}
-                  >
-                    {p.is_here ? 'Here' : 'Check in'}
-                  </button>
-                )}
-                {/* Claim button */}
-                {!p.claimed_by && !claimedPlayerId && (
-                  <button
-                    onClick={() => onClaimPlayer(p.id)}
-                    className="py-1 px-2 rounded-lg text-xs font-medium bg-blue-100 text-blue-700"
-                  >
-                    This is me?
-                  </button>
-                )}
-                {!isStarted && (
-                  <>
+
+              {/* Row 2: Division badge + Here badge + Action buttons */}
+              <div className="flex items-center justify-between ml-7">
+                {/* Left: status badges */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {getDivisionBadge(p.division_id)}
+                  {p.is_here ? (
+                    <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full leading-none">Here</span>
+                  ) : null}
+                </div>
+
+                {/* Right: action buttons */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {/* Check-in toggle */}
+                  {(p.claimed_by === deviceId || canManage) && (
                     <button
-                      onClick={() => togglePlaying(p.id, p.is_playing)}
-                      className={`py-1 px-3 rounded-lg text-xs font-medium ${
-                        p.is_playing
-                          ? 'bg-primary-600 text-white'
-                          : 'bg-gray-300 text-gray-600'
+                      onClick={() => toggleHere(p.id, p.is_here)}
+                      className={`min-h-[36px] min-w-[36px] py-1.5 px-2.5 rounded-lg text-xs font-medium ${
+                        p.is_here
+                          ? 'bg-green-600 text-white'
+                          : 'bg-gray-200 text-gray-500'
                       }`}
                     >
-                      {p.is_playing ? 'Playing' : 'Out'}
+                      {p.is_here ? 'Here' : 'Check in'}
                     </button>
+                  )}
+                  {/* Claim button */}
+                  {!p.claimed_by && !claimedPlayerId && (
                     <button
-                      onClick={() => removePlayer(p.id)}
-                      className="text-red-400 text-xs px-1"
+                      onClick={() => onClaimPlayer(p.id)}
+                      className="min-h-[36px] py-1.5 px-2.5 rounded-lg text-xs font-medium bg-blue-100 text-blue-700"
+                    >
+                      This is me?
+                    </button>
+                  )}
+                  {!isStarted && (
+                    <>
+                      <button
+                        onClick={() => togglePlaying(p.id, p.is_playing)}
+                        className={`min-h-[36px] py-1.5 px-3 rounded-lg text-xs font-medium ${
+                          p.is_playing
+                            ? 'bg-primary-600 text-white'
+                            : 'bg-gray-300 text-gray-600'
+                        }`}
+                      >
+                        {p.is_playing ? 'Playing' : 'Out'}
+                      </button>
+                      <button
+                        onClick={() => removePlayer(p.id)}
+                        className="min-h-[36px] min-w-[36px] flex items-center justify-center text-red-400 text-sm"
+                      >
+                        ✕
+                      </button>
+                    </>
+                  )}
+                  {/* Remove injured player post-start for host/cohost */}
+                  {isStarted && canManage && (
+                    <button
+                      onClick={() => {
+                        if (confirm(`Remove ${p.name}? (injured/leaving)`)) {
+                          togglePlaying(p.id, p.is_playing);
+                        }
+                      }}
+                      className="min-h-[36px] min-w-[36px] flex items-center justify-center text-red-400 text-sm"
+                      title="Remove (injured)"
                     >
                       ✕
                     </button>
-                  </>
-                )}
-                {/* Remove injured player post-start for host/cohost */}
-                {isStarted && canManage && (
-                  <button
-                    onClick={() => {
-                      if (confirm(`Remove ${p.name}? (injured/leaving)`)) {
-                        togglePlaying(p.id, p.is_playing);
-                      }
-                    }}
-                    className="text-red-400 text-xs px-1"
-                    title="Remove (injured)"
-                  >
-                    ✕
-                  </button>
-                )}
+                  )}
+                </div>
               </div>
             </div>
           ))}
@@ -319,7 +329,7 @@ export default function PlayersTab({
                   </span>
                   <button
                     onClick={() => removeTeam(t.id)}
-                    className="text-red-400 text-xs px-1"
+                    className="min-h-[36px] min-w-[36px] flex items-center justify-center text-red-400 text-xs"
                   >
                     ✕
                   </button>
@@ -397,8 +407,8 @@ export default function PlayersTab({
         </p>
       )}
 
-      {/* Regenerate schedule */}
-      {isStarted && game.schedule_generated && canManage && (
+      {/* Regenerate schedule — use !! to coerce number to boolean so React doesn't render "0" */}
+      {isStarted && !!game.schedule_generated && canManage && (
         <button
           onClick={onGenerateSchedule}
           disabled={generatingSchedule}
