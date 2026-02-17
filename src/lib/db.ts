@@ -133,6 +133,12 @@ export async function initDb(): Promise<void> {
 
   // Idempotent column migrations via try/catch
   const alterStatements = [
+    'ALTER TABLE games ADD COLUMN num_rounds INTEGER',
+    'ALTER TABLE games ADD COLUMN scheduled_at TEXT',
+    'ALTER TABLE games ADD COLUMN created_by TEXT',
+    'ALTER TABLE games ADD COLUMN is_complete INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE players ADD COLUMN claimed_by TEXT',
+    'ALTER TABLE players ADD COLUMN user_id TEXT',
     'ALTER TABLE players ADD COLUMN division_id TEXT',
     'ALTER TABLE players ADD COLUMN is_here INTEGER NOT NULL DEFAULT 0',
     "ALTER TABLE players ADD COLUMN role TEXT NOT NULL DEFAULT 'player'",
