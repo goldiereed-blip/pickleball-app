@@ -72,6 +72,18 @@ export async function POST(
       return NextResponse.json({ error: 'Player name is required' }, { status: 400 });
     }
 
+    // Prevent duplicate spots — check if the current user already has a player in this game
+    const user = await getSession();
+    if (user) {
+      const existingPlayer = await db.execute({
+        sql: 'SELECT id FROM players WHERE game_id = ? AND user_id = ?',
+        args: [gameId, user.id],
+      });
+      if (existingPlayer.rows.length > 0) {
+        return NextResponse.json({ error: 'You already have a spot in this game' }, { status: 409 });
+      }
+    }
+
     // Check total player count (active + waitlist)
     const totalCount = await db.execute({
       sql: 'SELECT COUNT(*) as cnt FROM players WHERE game_id = ?',
@@ -87,7 +99,6 @@ export async function POST(
 
     // Auto-assign host role if the current user is the game creator
     let role = 'player';
-    const user = await getSession();
     if (user && createdBy && user.id === createdBy) {
       const existingHost = await db.execute({
         sql: "SELECT id FROM players WHERE game_id = ? AND role = 'host'",

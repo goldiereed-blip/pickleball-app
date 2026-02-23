@@ -54,7 +54,16 @@ export default function GameHeader({
             Share
           </button>
         </div>
-        <div className="flex gap-3 mt-1 text-xs text-primary-200">
+        <div className="flex flex-wrap gap-3 mt-1 text-xs text-primary-200">
+          <span className={`px-1.5 py-0.5 rounded font-medium ${
+            game.is_complete
+              ? 'bg-gray-500/30 text-gray-200'
+              : game.started
+              ? 'bg-green-500/30 text-green-200'
+              : 'bg-amber-500/30 text-amber-200'
+          }`}>
+            {game.is_complete ? 'Completed' : game.started ? 'In Progress' : 'Not Started'}
+          </span>
           <span>{activePlayers.length}/{game.max_players || 48} players</span>
           <span>{game.num_courts} court{game.num_courts !== 1 ? 's' : ''}</span>
           <span>{game.mode === 'rotating' ? 'Rotating' : 'Fixed'} partners</span>

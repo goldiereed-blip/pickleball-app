@@ -151,6 +151,41 @@ export function ShareModal({ code, qrDataUrl, onShareLink, onClose }: ShareModal
   );
 }
 
+interface ReopenConfirmModalProps {
+  onReopen: () => void;
+  onClose: () => void;
+}
+
+export function ReopenConfirmModal({ onReopen, onClose }: ReopenConfirmModalProps) {
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl p-6 max-w-sm w-full space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-xl font-bold text-center text-amber-600">Reopen Game</h2>
+        <p className="text-center text-gray-600">
+          Are you sure you want to reopen this game? The current schedule will be cleared and you&apos;ll need to start again.
+        </p>
+        <p className="text-center text-xs text-gray-400">
+          Players will be kept. New players can join and the schedule will be regenerated when you start again.
+        </p>
+        <div className="space-y-2">
+          <button onClick={onReopen} className="w-full py-3 bg-amber-500 text-white font-semibold rounded-xl active:bg-amber-600">
+            Reopen Game
+          </button>
+          <button onClick={onClose} className="btn-secondary">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface ExitConfirmModalProps {
   onSaveAndExit: () => void;
   onDeleteAndExit: () => void;

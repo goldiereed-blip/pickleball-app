@@ -13,7 +13,7 @@ import ScheduleTab from '@/components/game/ScheduleTab';
 import ScoresTab from '@/components/game/ScoresTab';
 import RankingsTab from '@/components/game/RankingsTab';
 import MyGamesTab from '@/components/game/MyGamesTab';
-import { RoundConfirmModal, DeleteConfirmModal, ShareModal } from '@/components/game/Modals';
+import { RoundConfirmModal, DeleteConfirmModal, ShareModal, ReopenConfirmModal } from '@/components/game/Modals';
 
 function getDeviceId(): string {
   if (typeof window === 'undefined') return '';
@@ -72,6 +72,10 @@ export default function GamePage() {
 
   // Delete game
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  // Reopen game
+  const [showReopenConfirm, setShowReopenConfirm] = useState(false);
+  const [reopening, setReopening] = useState(false);
 
   // Team pairing
   interface TeamPairing { id: string; player1_id: string; player2_id: string; player1_name: string; player2_name: string; team_name: string | null; }
@@ -282,6 +286,26 @@ export default function GamePage() {
     }
   };
 
+  const reopenGame = async () => {
+    setShowReopenConfirm(false);
+    setReopening(true);
+    try {
+      const res = await fetch(`/api/games/${code}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reopen: 1 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setTab('players');
+      fetchData();
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Failed to reopen game');
+    } finally {
+      setReopening(false);
+    }
+  };
+
   const shareResults = () => {
     const lines = [`${game?.name} - Final Results`];
     rankings.forEach((r, i) => {
@@ -344,12 +368,28 @@ export default function GamePage() {
         onDelete={() => setShowDeleteConfirm(true)}
       />
 
-      {/* Complete Game / Share Results buttons for host */}
+      {/* Game management buttons for host/cohost */}
       {isStarted && game && !game.is_complete && (currentPlayer?.role === 'host' || currentPlayer?.role === 'cohost') && (
-        <div className="max-w-lg mx-auto px-4 mt-2 flex gap-2">
-          <button onClick={completeGame} className="flex-1 py-2 bg-green-600 text-white text-sm font-semibold rounded-xl">
-            Complete Game
-          </button>
+        <div className="max-w-lg mx-auto px-4 mt-2 space-y-2">
+          <div className="flex gap-2">
+            <button onClick={completeGame} className="flex-1 py-2 bg-green-600 text-white text-sm font-semibold rounded-xl">
+              Complete Game
+            </button>
+          </div>
+          {completedMatches === 0 && (
+            <button
+              onClick={() => setShowReopenConfirm(true)}
+              disabled={reopening}
+              className="w-full py-2 bg-amber-500 text-white text-sm font-semibold rounded-xl active:bg-amber-600"
+            >
+              {reopening ? 'Reopening...' : 'Reopen for Players'}
+            </button>
+          )}
+          {completedMatches > 0 && (
+            <p className="text-xs text-gray-400 text-center">
+              Game cannot be reopened — {completedMatches} game{completedMatches !== 1 ? 's' : ''} already played
+            </p>
+          )}
         </div>
       )}
       {!!game?.is_complete && rankings.length > 0 && (
@@ -454,6 +494,13 @@ export default function GamePage() {
           gameName={game.name}
           onDelete={deleteGame}
           onClose={() => setShowDeleteConfirm(false)}
+        />
+      )}
+
+      {showReopenConfirm && (
+        <ReopenConfirmModal
+          onReopen={reopenGame}
+          onClose={() => setShowReopenConfirm(false)}
         />
       )}
 

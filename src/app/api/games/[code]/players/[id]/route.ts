@@ -27,21 +27,35 @@ export async function PATCH(
 
     const body = await request.json();
 
-    // Claim protection: check if player already has a user_id set
+    // Claim protection
     if (typeof body.claimed_by === 'string' || typeof body.user_id === 'string') {
+      const session = await getSession();
+      const callerRole = await getCallerRole(gameId);
+
+      // Check if this spot is already claimed by someone else
       const existing = await db.execute({
         sql: 'SELECT user_id FROM players WHERE id = ?',
         args: [id],
       });
       if (existing.rows.length > 0 && existing.rows[0].user_id) {
         const existingUserId = existing.rows[0].user_id as string;
-        const session = await getSession();
-        const callerRole = await getCallerRole(gameId);
         const isOriginalClaimer = session && session.id === existingUserId;
         const isHostCohost = canManage(callerRole);
 
         if (!isOriginalClaimer && !isHostCohost) {
           return NextResponse.json({ error: 'This spot is already claimed' }, { status: 409 });
+        }
+      }
+
+      // Prevent claiming a second spot — check if user already has another player in this game
+      const claimUserId = body.user_id || body.claimed_by;
+      if (claimUserId && session) {
+        const alreadyInGame = await db.execute({
+          sql: 'SELECT id FROM players WHERE game_id = ? AND user_id = ? AND id != ?',
+          args: [gameId, claimUserId, id],
+        });
+        if (alreadyInGame.rows.length > 0 && !canManage(callerRole)) {
+          return NextResponse.json({ error: 'You already have a spot in this game' }, { status: 409 });
         }
       }
     }

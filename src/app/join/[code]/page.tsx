@@ -316,9 +316,9 @@ export default function JoinPreviewPage() {
             )}
           </div>
         ) : unclaimedMatch ? (
-          // Name found in list but unclaimed — offer claim or remove
-          <div className="card border border-blue-200 bg-blue-50">
-            <p className="text-sm text-blue-800 font-medium mb-2">
+          // Name found in list but unclaimed — offer claim, remove, or join as new
+          <div className="card border border-blue-200 bg-blue-50 space-y-3">
+            <p className="text-sm text-blue-800 font-medium">
               A spot for &ldquo;{unclaimedMatch.name}&rdquo; is reserved in this game
             </p>
             <div className="flex gap-2">
@@ -327,16 +327,29 @@ export default function JoinPreviewPage() {
                 disabled={claiming === unclaimedMatch.id}
                 className="flex-1 py-2.5 bg-primary-600 text-white font-semibold rounded-xl text-sm"
               >
-                {claiming === unclaimedMatch.id ? 'Claiming...' : 'Claim Spot'}
+                {claiming === unclaimedMatch.id ? 'Claiming...' : 'Claim This Spot'}
               </button>
               <button
                 onClick={() => removeUnclaimedSpot(unclaimedMatch.id)}
                 disabled={removing}
                 className="py-2.5 px-4 bg-red-50 text-red-600 font-medium rounded-xl text-sm border border-red-200"
               >
-                {removing ? '...' : 'Remove Me'}
+                {removing ? '...' : 'Not Me'}
               </button>
             </div>
+            {!game.started && (
+              <button
+                onClick={joinGame}
+                disabled={joining}
+                className="w-full py-2.5 bg-white text-primary-700 font-semibold rounded-xl text-sm border border-primary-200"
+              >
+                {joining
+                  ? 'Joining...'
+                  : isFull
+                  ? `That's not me — Join Waitlist as ${user.display_name}`
+                  : `That's not me — Join as New Player`}
+              </button>
+            )}
           </div>
         ) : !game.started ? (
           // Not in game, can join or waitlist
@@ -415,7 +428,7 @@ export default function JoinPreviewPage() {
                     )}
                   </div>
                   {/* Claim button for unclaimed spots (only if user has no player yet) */}
-                  {!p.user_id && !myPlayer && !unclaimedMatch && (
+                  {!p.user_id && !myPlayer && (
                     <button
                       onClick={() => claimSpot(p.id)}
                       disabled={claiming === p.id}

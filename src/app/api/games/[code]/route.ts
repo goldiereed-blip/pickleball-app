@@ -84,6 +84,37 @@ export async function PATCH(
       });
     }
 
+    // Reopen game — clear schedule and return to "not started" state
+    if (body.reopen === 1) {
+      if (!canManage(callerRole)) {
+        return NextResponse.json({ error: 'Only host or co-host can reopen the game' }, { status: 403 });
+      }
+
+      const currentGame = game.rows[0];
+      if (!(currentGame.started as number)) {
+        return NextResponse.json({ error: 'Game is not started' }, { status: 400 });
+      }
+
+      // Check if any scores have been entered
+      const scoredMatches = await db.execute({
+        sql: `SELECT COUNT(*) as cnt FROM matches WHERE game_id = ? AND is_completed = 1`,
+        args: [gameId],
+      });
+      if ((scoredMatches.rows[0].cnt as number) > 0) {
+        return NextResponse.json({ error: 'Cannot reopen — games have already been played' }, { status: 400 });
+      }
+
+      // Clear schedule: delete matches, rounds
+      await db.execute({ sql: 'DELETE FROM matches WHERE game_id = ?', args: [gameId] });
+      await db.execute({ sql: 'DELETE FROM rounds WHERE game_id = ?', args: [gameId] });
+
+      // Reset game state
+      await db.execute({
+        sql: 'UPDATE games SET started = 0, schedule_generated = 0, num_rounds = NULL WHERE id = ?',
+        args: [gameId],
+      });
+    }
+
     if (typeof body.max_players === 'number') {
       if (!canManage(callerRole)) {
         return NextResponse.json({ error: 'Only host or co-host can change max players' }, { status: 403 });
