@@ -6,15 +6,18 @@ interface User {
   id: string;
   email: string;
   display_name: string;
+  first_name: string;
+  last_name: string;
 }
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<{ error?: string }>;
-  register: (email: string, password: string, displayName: string) => Promise<{ error?: string }>;
+  register: (email: string, password: string, firstName: string, lastName: string) => Promise<{ error?: string }>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
+  updateProfile: (data: Record<string, string>) => Promise<{ error?: string }>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -24,6 +27,7 @@ const AuthContext = createContext<AuthContextType>({
   register: async () => ({}),
   logout: async () => {},
   refresh: async () => {},
+  updateProfile: async () => ({}),
 });
 
 export function useAuth() {
@@ -62,11 +66,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return {};
   };
 
-  const register = async (email: string, password: string, displayName: string) => {
+  const register = async (email: string, password: string, firstName: string, lastName: string) => {
     const res = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, display_name: displayName }),
+      body: JSON.stringify({ email, password, first_name: firstName, last_name: lastName }),
     });
     const data = await res.json();
     if (!res.ok) return { error: data.error };
@@ -79,8 +83,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
+  const updateProfile = async (data: Record<string, string>) => {
+    if (!user) return { error: 'Not logged in' };
+    const res = await fetch(`/api/users/${user.id}/profile`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    const result = await res.json();
+    if (!res.ok) return { error: result.error };
+    setUser(result.user);
+    return {};
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, refresh }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, refresh, updateProfile }}>
       {children}
     </AuthContext.Provider>
   );

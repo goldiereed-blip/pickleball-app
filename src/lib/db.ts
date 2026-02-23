@@ -39,6 +39,18 @@ export async function initDb(): Promise<void> {
   });
 
   await db.execute({
+    sql: `CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token TEXT UNIQUE NOT NULL,
+      expires_at TEXT NOT NULL,
+      used INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    args: [],
+  });
+
+  await db.execute({
     sql: `CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -144,6 +156,10 @@ export async function initDb(): Promise<void> {
     "ALTER TABLE players ADD COLUMN role TEXT NOT NULL DEFAULT 'player'",
     'ALTER TABLE rounds ADD COLUMN division_id TEXT',
     'ALTER TABLE matches ADD COLUMN division_id TEXT',
+    "ALTER TABLE users ADD COLUMN first_name TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE users ADD COLUMN last_name TEXT NOT NULL DEFAULT ''",
+    'ALTER TABLE games ADD COLUMN max_players INTEGER NOT NULL DEFAULT 48',
+    'ALTER TABLE players ADD COLUMN waitlist_position INTEGER',
   ];
   for (const sql of alterStatements) {
     try {

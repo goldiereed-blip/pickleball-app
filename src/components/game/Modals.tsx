@@ -36,18 +36,26 @@ export function RoundConfirmModal({
             Based on {activePlayers.length} players and {game.num_courts} court{game.num_courts !== 1 ? 's' : ''},
             we suggest <span className="font-bold text-primary-700">{suggestedRounds}</span> rounds.
           </p>
-          <label className="block text-sm font-medium text-gray-600 mb-1">
+          <label className="block text-sm font-medium text-gray-600 mb-2">
             Number of Rounds
           </label>
-          <input
-            type="number"
-            inputMode="numeric"
-            className="input-field text-center text-2xl font-bold w-32 mx-auto"
-            value={selectedRounds}
-            onChange={(e) => setSelectedRounds(Math.max(1, parseInt(e.target.value) || 1))}
-            min="1"
-            max="50"
-          />
+          <div className="flex items-center justify-center gap-3">
+            <button
+              onClick={() => setSelectedRounds(Math.max(1, selectedRounds - 1))}
+              className="w-12 h-12 rounded-xl bg-gray-200 text-xl font-bold active:bg-gray-300 select-none"
+            >
+              -
+            </button>
+            <span className="text-3xl font-bold text-primary-700 w-16 text-center">
+              {selectedRounds}
+            </span>
+            <button
+              onClick={() => setSelectedRounds(Math.min(50, selectedRounds + 1))}
+              className="w-12 h-12 rounded-xl bg-gray-200 text-xl font-bold active:bg-gray-300 select-none"
+            >
+              +
+            </button>
+          </div>
         </div>
         <p className="text-xs text-gray-400 text-center">
           This will lock the player list and start the tournament

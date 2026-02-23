@@ -12,6 +12,7 @@ interface ScoreEntryProps {
   setScoreT2: (s: string) => void;
   submitScore: (id: string) => void;
   divisionColor?: string | null;
+  canEdit?: boolean;
 }
 
 export default function ScoreEntry({
@@ -24,6 +25,7 @@ export default function ScoreEntry({
   setScoreT2,
   submitScore,
   divisionColor,
+  canEdit = true,
 }: ScoreEntryProps) {
   const isEditing = editingMatch === match.id;
 
@@ -64,7 +66,7 @@ export default function ScoreEntry({
         </div>
       </div>
 
-      {isEditing ? (
+      {isEditing && canEdit ? (
         <div className="mt-3 space-y-2">
           <div className="flex items-center gap-2">
             <input
@@ -129,20 +131,24 @@ export default function ScoreEntry({
                   {match.team2_score}
                 </span>
               </span>
-              <button
-                onClick={startEditing}
-                className="text-xs text-primary-600 font-medium py-1 px-3 border border-primary-200 rounded-lg"
-              >
-                Edit
-              </button>
+              {canEdit && (
+                <button
+                  onClick={startEditing}
+                  className="text-xs text-primary-600 font-medium py-1 px-3 border border-primary-200 rounded-lg"
+                >
+                  Edit
+                </button>
+              )}
             </div>
-          ) : (
+          ) : canEdit ? (
             <button
               onClick={startEditing}
               className="w-full py-2 bg-primary-100 text-primary-700 font-medium rounded-lg text-sm active:bg-primary-200"
             >
               Enter Score
             </button>
+          ) : (
+            <p className="text-center text-sm text-gray-400 py-2">No score yet</p>
           )}
         </div>
       )}

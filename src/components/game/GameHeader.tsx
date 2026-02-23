@@ -1,6 +1,6 @@
 'use client';
 
-import type { Game, Player, RoundWithMatches } from '@/lib/types';
+import type { Game, Player } from '@/lib/types';
 
 interface GameHeaderProps {
   game: Game;
@@ -8,7 +8,7 @@ interface GameHeaderProps {
   activePlayers: Player[];
   completedMatches: number;
   totalMatches: number;
-  user: { id: string; display_name: string } | null;
+  isHost: boolean;
   onShare: () => void;
   onDelete: () => void;
 }
@@ -19,7 +19,7 @@ export default function GameHeader({
   activePlayers,
   completedMatches,
   totalMatches,
-  user,
+  isHost,
   onShare,
   onDelete,
 }: GameHeaderProps) {
@@ -55,7 +55,7 @@ export default function GameHeader({
           </button>
         </div>
         <div className="flex gap-3 mt-1 text-xs text-primary-200">
-          <span>{activePlayers.length} players</span>
+          <span>{activePlayers.length}/{game.max_players || 48} players</span>
           <span>{game.num_courts} court{game.num_courts !== 1 ? 's' : ''}</span>
           <span>{game.mode === 'rotating' ? 'Rotating' : 'Fixed'} partners</span>
           {totalMatches > 0 && (
@@ -63,7 +63,7 @@ export default function GameHeader({
               {completedMatches}/{totalMatches} played
             </span>
           )}
-          {user && game.created_by === user.id && (
+          {isHost && (
             <button
               onClick={onDelete}
               className="text-red-300 underline ml-auto"

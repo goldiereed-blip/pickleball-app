@@ -6,6 +6,7 @@ interface MyGamesTabProps {
   players: Player[];
   rounds: RoundWithMatches[];
   deviceId: string;
+  userId: string | null;
   claimedPlayerId: string | null;
   selectedPlayerId: string | null;
   setSelectedPlayerId: (id: string | null) => void;
@@ -15,6 +16,7 @@ export default function MyGamesTab({
   players,
   rounds,
   deviceId,
+  userId,
   claimedPlayerId,
   selectedPlayerId,
   setSelectedPlayerId,
@@ -53,7 +55,7 @@ export default function MyGamesTab({
           <option value="">Select a player...</option>
           {players.filter((p) => p.is_playing).map((p) => (
             <option key={p.id} value={p.id}>
-              {p.name}{p.claimed_by === deviceId ? ' (You)' : ''}
+              {p.name}{(p.user_id === userId || p.claimed_by === deviceId) ? ' (You)' : ''}
             </option>
           ))}
         </select>

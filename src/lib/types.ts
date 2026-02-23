@@ -2,6 +2,8 @@ export interface User {
   id: string;
   email: string;
   display_name: string;
+  first_name: string;
+  last_name: string;
   created_at: string;
 }
 
@@ -22,6 +24,7 @@ export interface Game {
   started: number;
   is_complete: number;
   num_rounds: number | null;
+  max_players: number;
   scheduled_at: string | null;
   created_by: string | null;
   created_at: string;
@@ -38,6 +41,7 @@ export interface Player {
   division_id: string | null;
   is_here: number;
   role: PlayerRole;
+  waitlist_position: number | null;
   created_at: string;
 }
 

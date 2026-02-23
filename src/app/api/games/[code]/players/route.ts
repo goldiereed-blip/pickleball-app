@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, initDb, generateId } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { getActivePlayerCount, getNextWaitlistPosition } from '@/lib/waitlist';
 
 export async function GET(
   request: NextRequest,
@@ -23,7 +24,7 @@ export async function GET(
     const gameId = game.rows[0].id as string;
 
     const players = await db.execute({
-      sql: 'SELECT * FROM players WHERE game_id = ? ORDER BY order_num ASC, created_at ASC',
+      sql: 'SELECT * FROM players WHERE game_id = ? ORDER BY waitlist_position IS NOT NULL, waitlist_position ASC, order_num ASC, created_at ASC',
       args: [gameId],
     });
 
@@ -47,7 +48,7 @@ export async function POST(
     const { code } = params;
 
     const game = await db.execute({
-      sql: 'SELECT id, started, created_by FROM games WHERE code = ?',
+      sql: 'SELECT id, started, created_by, max_players FROM games WHERE code = ?',
       args: [code.toUpperCase()],
     });
 
@@ -58,6 +59,7 @@ export async function POST(
     const gameId = game.rows[0].id as string;
     const started = game.rows[0].started as number;
     const createdBy = game.rows[0].created_by as string | null;
+    const maxPlayers = (game.rows[0].max_players as number) || 48;
 
     if (started) {
       return NextResponse.json({ error: 'Tournament has started. Cannot add players.' }, { status: 400 });
@@ -70,14 +72,14 @@ export async function POST(
       return NextResponse.json({ error: 'Player name is required' }, { status: 400 });
     }
 
-    // Check player count
-    const count = await db.execute({
+    // Check total player count (active + waitlist)
+    const totalCount = await db.execute({
       sql: 'SELECT COUNT(*) as cnt FROM players WHERE game_id = ?',
       args: [gameId],
     });
-    const currentCount = count.rows[0].cnt as number;
+    const currentTotal = totalCount.rows[0].cnt as number;
 
-    if (currentCount >= 48) {
+    if (currentTotal >= 48) {
       return NextResponse.json({ error: 'Maximum 48 players reached' }, { status: 400 });
     }
 
@@ -87,7 +89,6 @@ export async function POST(
     let role = 'player';
     const user = await getSession();
     if (user && createdBy && user.id === createdBy) {
-      // Check if any host already exists for this game
       const existingHost = await db.execute({
         sql: "SELECT id FROM players WHERE game_id = ? AND role = 'host'",
         args: [gameId],
@@ -97,14 +98,26 @@ export async function POST(
       }
     }
 
+    // Determine if player goes to active roster or waitlist
+    const activeCount = await getActivePlayerCount(gameId);
+    let waitlistPosition: number | null = null;
+    let isPlaying = 1;
+
+    if (activeCount >= maxPlayers) {
+      // Game is full — add to waitlist
+      waitlistPosition = await getNextWaitlistPosition(gameId);
+      isPlaying = 0;
+    }
+
     await db.execute({
-      sql: 'INSERT INTO players (id, game_id, name, order_num, role) VALUES (?, ?, ?, ?, ?)',
-      args: [id, gameId, name.trim(), currentCount, role],
+      sql: 'INSERT INTO players (id, game_id, name, is_playing, order_num, role, waitlist_position) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      args: [id, gameId, name.trim(), isPlaying, currentTotal, role, waitlistPosition],
     });
 
     return NextResponse.json({
-      id, game_id: gameId, name: name.trim(), is_playing: 1,
-      order_num: currentCount, role, division_id: null, is_here: 0,
+      id, game_id: gameId, name: name.trim(), is_playing: isPlaying,
+      order_num: currentTotal, role, division_id: null, is_here: 0,
+      waitlist_position: waitlistPosition,
     });
   } catch (e: unknown) {
     console.error('POST /api/games/[code]/players error:', e);

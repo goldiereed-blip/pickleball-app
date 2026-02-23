@@ -13,6 +13,7 @@ interface ScoresTabProps {
   setScoreT1: (s: string) => void;
   setScoreT2: (s: string) => void;
   submitScore: (id: string) => void;
+  canEdit?: boolean;
 }
 
 export default function ScoresTab({
@@ -25,6 +26,7 @@ export default function ScoresTab({
   setScoreT1,
   setScoreT2,
   submitScore,
+  canEdit = true,
 }: ScoresTabProps) {
   const getDivisionColor = (divisionId: string | null | undefined) => {
     if (!divisionId) return null;
@@ -69,6 +71,7 @@ export default function ScoresTab({
                 setScoreT2={setScoreT2}
                 submitScore={submitScore}
                 divisionColor={getDivisionColor(match.division_id)}
+                canEdit={canEdit}
               />
             ))}
           </div>

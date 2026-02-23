@@ -28,8 +28,15 @@ function getDeviceId(): string {
 export default function GamePage() {
   const params = useParams();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const code = (params.code as string).toUpperCase();
+
+  // Auth guard
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.replace('/login');
+    }
+  }, [authLoading, user, router]);
 
   const [tab, setTab] = useState<Tab>('players');
   const [game, setGame] = useState<Game | null>(null);
@@ -107,7 +114,7 @@ export default function GamePage() {
       if (Array.isArray(divisionsData)) setDivisions(divisionsData);
 
       const myPlayer = playersData.find(
-        (p: Player) => p.claimed_by === deviceId
+        (p: Player) => (user && p.user_id === user.id) || p.claimed_by === deviceId
       );
       if (myPlayer) {
         setClaimedPlayerId(myPlayer.id);
@@ -139,13 +146,21 @@ export default function GamePage() {
   }, []);
 
   const claimPlayer = async (playerId: string) => {
-    const claimData: Record<string, string> = { claimed_by: deviceId };
-    if (user) claimData.user_id = user.id;
-    await fetch(`/api/games/${code}/players/${playerId}`, {
+    const claimData: Record<string, string> = { claimed_by: user ? user.id : deviceId };
+    if (user) {
+      claimData.user_id = user.id;
+      claimData.name = user.display_name;
+    }
+    const res = await fetch(`/api/games/${code}/players/${playerId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(claimData),
     });
+    if (!res.ok) {
+      const data = await res.json();
+      alert(data.error || 'Failed to claim spot');
+      return;
+    }
     setClaimedPlayerId(playerId);
     setSelectedPlayerId(playerId);
     fetchData();
@@ -303,11 +318,12 @@ export default function GamePage() {
     );
   }
 
-  const activePlayers = players.filter((p) => p.is_playing);
+  const activePlayers = players.filter((p) => p.is_playing && (p.waitlist_position === null || p.waitlist_position === undefined));
   const completedMatches = rounds.reduce((sum, r) => sum + r.matches.filter((m) => m.is_completed).length, 0);
   const totalMatches = rounds.reduce((sum, r) => sum + r.matches.length, 0);
   const isStarted = !!game?.started;
-  const currentPlayer = players.find((p) => p.claimed_by === deviceId) || null;
+  const currentPlayer = players.find((p) => (user && p.user_id === user.id) || p.claimed_by === deviceId) || null;
+  const canEditScores = !!currentPlayer && (currentPlayer.waitlist_position === null || currentPlayer.waitlist_position === undefined);
 
   const allTabs: Tab[] = ['players'];
   // Divisions tab hidden until ready for production
@@ -323,13 +339,13 @@ export default function GamePage() {
         activePlayers={activePlayers}
         completedMatches={completedMatches}
         totalMatches={totalMatches}
-        user={user}
+        isHost={currentPlayer?.role === 'host'}
         onShare={() => setShowShare(true)}
         onDelete={() => setShowDeleteConfirm(true)}
       />
 
       {/* Complete Game / Share Results buttons for host */}
-      {isStarted && game && !game.is_complete && currentPlayer?.role === 'host' && (
+      {isStarted && game && !game.is_complete && (currentPlayer?.role === 'host' || currentPlayer?.role === 'cohost') && (
         <div className="max-w-lg mx-auto px-4 mt-2 flex gap-2">
           <button onClick={completeGame} className="flex-1 py-2 bg-green-600 text-white text-sm font-semibold rounded-xl">
             Complete Game
@@ -359,6 +375,7 @@ export default function GamePage() {
             deviceId={deviceId}
             claimedPlayerId={claimedPlayerId}
             currentPlayer={currentPlayer}
+            currentUserId={user?.id || null}
             generatingSchedule={generatingSchedule}
             onFetchData={fetchData}
             onStartRoundRobin={startRoundRobin}
@@ -393,6 +410,7 @@ export default function GamePage() {
             setScoreT1={setScoreT1}
             setScoreT2={setScoreT2}
             submitScore={submitScore}
+            canEdit={canEditScores}
           />
         )}
 
@@ -410,6 +428,7 @@ export default function GamePage() {
             players={players}
             rounds={rounds}
             deviceId={deviceId}
+            userId={user?.id || null}
             claimedPlayerId={claimedPlayerId}
             selectedPlayerId={selectedPlayerId}
             setSelectedPlayerId={setSelectedPlayerId}

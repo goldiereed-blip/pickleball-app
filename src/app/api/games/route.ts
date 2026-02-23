@@ -8,9 +8,9 @@ export async function POST(request: NextRequest) {
     const db = getDb();
 
     const body = await request.json();
-    const { name, num_courts, mode, scheduled_at } = body;
+    const { name, num_courts, mode, scheduled_at, max_players } = body;
 
-    if (!name || !num_courts || !mode) {
+    if (!name || !num_courts || !mode || !max_players) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
@@ -20,6 +20,10 @@ export async function POST(request: NextRequest) {
 
     if (mode !== 'rotating' && mode !== 'fixed') {
       return NextResponse.json({ error: 'Mode must be rotating or fixed' }, { status: 400 });
+    }
+
+    if (max_players < 4 || max_players > 48) {
+      return NextResponse.json({ error: 'Max players must be between 4 and 48' }, { status: 400 });
     }
 
     const id = generateId();
@@ -40,11 +44,20 @@ export async function POST(request: NextRequest) {
     const createdBy = user?.id || null;
 
     await db.execute({
-      sql: 'INSERT INTO games (id, code, name, num_courts, mode, scheduled_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      args: [id, code, name, num_courts, mode, scheduled_at || null, createdBy],
+      sql: 'INSERT INTO games (id, code, name, num_courts, mode, max_players, scheduled_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      args: [id, code, name, num_courts, mode, max_players, scheduled_at || null, createdBy],
     });
 
-    return NextResponse.json({ id, code, name, num_courts, mode, scheduled_at: scheduled_at || null, created_by: createdBy });
+    // Auto-create a player record for the host
+    if (user) {
+      const playerId = generateId();
+      await db.execute({
+        sql: "INSERT INTO players (id, game_id, name, order_num, claimed_by, user_id, role) VALUES (?, ?, ?, 0, ?, ?, 'host')",
+        args: [playerId, id, user.display_name, user.id, user.id],
+      });
+    }
+
+    return NextResponse.json({ id, code, name, num_courts, mode, max_players, scheduled_at: scheduled_at || null, created_by: createdBy });
   } catch (e: unknown) {
     console.error('POST /api/games error:', e);
     return NextResponse.json(

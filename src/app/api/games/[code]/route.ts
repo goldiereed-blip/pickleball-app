@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, initDb } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getCallerRole, canManage } from '@/lib/api-permissions';
 
 export async function GET(
   request: NextRequest,
@@ -51,7 +51,13 @@ export async function PATCH(
     const gameId = game.rows[0].id as string;
     const body = await request.json();
 
+    // Most game mutations require host/cohost
+    const callerRole = await getCallerRole(gameId);
+
     if (typeof body.started === 'number') {
+      if (!canManage(callerRole)) {
+        return NextResponse.json({ error: 'Only host or co-host can start the game' }, { status: 403 });
+      }
       await db.execute({
         sql: 'UPDATE games SET started = ? WHERE id = ?',
         args: [body.started, gameId],
@@ -59,6 +65,9 @@ export async function PATCH(
     }
 
     if (typeof body.num_rounds === 'number') {
+      if (!canManage(callerRole)) {
+        return NextResponse.json({ error: 'Only host or co-host can set rounds' }, { status: 403 });
+      }
       await db.execute({
         sql: 'UPDATE games SET num_rounds = ? WHERE id = ?',
         args: [body.num_rounds, gameId],
@@ -66,9 +75,23 @@ export async function PATCH(
     }
 
     if (typeof body.is_complete === 'number') {
+      if (!canManage(callerRole)) {
+        return NextResponse.json({ error: 'Only host or co-host can complete the game' }, { status: 403 });
+      }
       await db.execute({
         sql: 'UPDATE games SET is_complete = ? WHERE id = ?',
         args: [body.is_complete, gameId],
+      });
+    }
+
+    if (typeof body.max_players === 'number') {
+      if (!canManage(callerRole)) {
+        return NextResponse.json({ error: 'Only host or co-host can change max players' }, { status: 403 });
+      }
+      const clamped = Math.max(4, Math.min(48, body.max_players));
+      await db.execute({
+        sql: 'UPDATE games SET max_players = ? WHERE id = ?',
+        args: [clamped, gameId],
       });
     }
 
@@ -92,7 +115,7 @@ export async function DELETE(
     const { code } = params;
 
     const game = await db.execute({
-      sql: 'SELECT id, created_by FROM games WHERE code = ?',
+      sql: 'SELECT id FROM games WHERE code = ?',
       args: [code.toUpperCase()],
     });
 
@@ -101,14 +124,11 @@ export async function DELETE(
     }
 
     const gameId = game.rows[0].id as string;
-    const createdBy = game.rows[0].created_by as string | null;
 
-    // Check if the current user is the creator
-    if (createdBy) {
-      const user = await getSession();
-      if (!user || user.id !== createdBy) {
-        return NextResponse.json({ error: 'Only the game creator can delete this game' }, { status: 403 });
-      }
+    // Only the host can delete the game
+    const callerRole = await getCallerRole(gameId);
+    if (callerRole !== 'host') {
+      return NextResponse.json({ error: 'Only the host can delete this game' }, { status: 403 });
     }
 
     // Delete in order: matches → rounds → teams → divisions → players → game

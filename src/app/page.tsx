@@ -16,16 +16,24 @@ interface MyGame {
 
 export default function Home() {
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, logout } = useAuth();
   const [view, setView] = useState<'home' | 'create' | 'join'>('home');
   const [myGames, setMyGames] = useState<MyGame[]>([]);
   const [gameName, setGameName] = useState('');
-  const [numCourts, setNumCourts] = useState(2);
+  const [numCourts, setNumCourts] = useState('2');
   const [mode, setMode] = useState<'rotating' | 'fixed'>('rotating');
+  const [maxPlayers, setMaxPlayers] = useState('12');
   const [scheduledAt, setScheduledAt] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.replace('/login');
+    }
+  }, [authLoading, user, router]);
 
   useEffect(() => {
     if (user) {
@@ -49,8 +57,9 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: gameName.trim(),
-          num_courts: numCourts,
+          num_courts: parseInt(numCourts) || 2,
           mode,
+          max_players: parseInt(maxPlayers) || 12,
           scheduled_at: scheduledAt || null,
         }),
       });
@@ -75,13 +84,21 @@ export default function Home() {
     try {
       const res = await fetch(`/api/games/${code}`);
       if (!res.ok) throw new Error('Game not found');
-      router.push(`/game/${code}`);
+      router.push(`/join/${code}`);
     } catch {
       setError('Game not found. Check the join code and try again.');
     } finally {
       setLoading(false);
     }
   };
+
+  if (authLoading || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-gray-500">Loading...</p>
+      </div>
+    );
+  }
 
   if (view === 'create') {
     return (
@@ -134,23 +151,49 @@ export default function Home() {
 
             <div>
               <label className="block text-sm font-medium text-gray-600 mb-1">
-                Number of Courts
+                Courts (1–12)
               </label>
-              <div className="grid grid-cols-6 gap-2">
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => (
-                  <button
-                    key={n}
-                    onClick={() => setNumCourts(n)}
-                    className={`py-3 rounded-xl text-lg font-semibold transition-colors ${
-                      numCourts === n
-                        ? 'bg-primary-600 text-white'
-                        : 'bg-gray-100 text-gray-600 active:bg-gray-200'
-                    }`}
-                  >
-                    {n}
-                  </button>
-                ))}
-              </div>
+              <input
+                type="number"
+                inputMode="numeric"
+                className="input-field"
+                value={numCourts}
+                onChange={(e) => setNumCourts(e.target.value)}
+                onBlur={() => {
+                  const n = parseInt(numCourts);
+                  if (isNaN(n) || n < 1) setNumCourts('1');
+                  else if (n > 12) setNumCourts('12');
+                  else setNumCourts(String(n));
+                }}
+                min="1"
+                max="12"
+                placeholder="2"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">
+                Max Players (4–48)
+              </label>
+              <input
+                type="number"
+                inputMode="numeric"
+                className="input-field"
+                value={maxPlayers}
+                onChange={(e) => setMaxPlayers(e.target.value)}
+                onBlur={() => {
+                  const n = parseInt(maxPlayers);
+                  if (isNaN(n) || n < 4) setMaxPlayers('4');
+                  else if (n > 48) setMaxPlayers('48');
+                  else setMaxPlayers(String(n));
+                }}
+                min="4"
+                max="48"
+                placeholder="12"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Players beyond this limit will be added to the waitlist
+              </p>
             </div>
 
             <div>
@@ -238,7 +281,7 @@ export default function Home() {
             disabled={loading}
             className="btn-primary"
           >
-            {loading ? 'Joining...' : 'Join Game'}
+            {loading ? 'Looking up...' : 'Join Game'}
           </button>
 
           <p className="text-center text-sm text-gray-500">
@@ -256,25 +299,24 @@ export default function Home() {
     <div className="min-h-screen flex flex-col items-center justify-center p-4">
       {/* Auth header */}
       <div className="w-full max-w-md mb-4 flex justify-end gap-2">
-        {!authLoading && (
-          user ? (
-            <>
-              <button
-                onClick={() => router.push('/dashboard')}
-                className="text-sm text-primary-700 font-medium py-1 px-3 border border-primary-200 rounded-lg"
-              >
-                {user.display_name}
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={() => router.push('/login')}
-              className="text-sm text-primary-700 font-medium py-1 px-3 border border-primary-200 rounded-lg"
-            >
-              Sign In
-            </button>
-          )
-        )}
+        <button
+          onClick={() => router.push('/profile')}
+          className="text-sm text-primary-700 font-medium py-1 px-3 border border-primary-200 rounded-lg"
+        >
+          {user.display_name}
+        </button>
+        <button
+          onClick={() => router.push('/dashboard')}
+          className="text-sm text-primary-700 font-medium py-1 px-3 border border-primary-200 rounded-lg"
+        >
+          Stats
+        </button>
+        <button
+          onClick={() => { logout(); router.push('/login'); }}
+          className="text-sm text-gray-500 font-medium py-1 px-3 border border-gray-200 rounded-lg"
+        >
+          Sign Out
+        </button>
       </div>
 
       <div className="w-full max-w-md space-y-6 text-center">
@@ -304,7 +346,7 @@ export default function Home() {
         </div>
 
         {/* My Active Games */}
-        {user && activeGames.length > 0 && (
+        {activeGames.length > 0 && (
           <div className="pt-4 text-left">
             <h3 className="font-semibold text-gray-700 mb-2">My Active Games</h3>
             <div className="space-y-2">
