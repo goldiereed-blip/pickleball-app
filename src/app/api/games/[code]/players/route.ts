@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, initDb, generateId } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { getCallerRole, canManage } from '@/lib/api-permissions';
 import { getActivePlayerCount, getNextWaitlistPosition } from '@/lib/waitlist';
 
 export async function GET(
@@ -72,15 +73,19 @@ export async function POST(
       return NextResponse.json({ error: 'Player name is required' }, { status: 400 });
     }
 
-    // Prevent duplicate spots — check if the current user already has a player in this game
+    // Prevent duplicate spots — but only when a player is joining for themselves
+    // Hosts/co-hosts adding players on behalf of others should not be blocked
     const user = await getSession();
     if (user) {
-      const existingPlayer = await db.execute({
-        sql: 'SELECT id FROM players WHERE game_id = ? AND user_id = ?',
-        args: [gameId, user.id],
-      });
-      if (existingPlayer.rows.length > 0) {
-        return NextResponse.json({ error: 'You already have a spot in this game' }, { status: 409 });
+      const callerRole = await getCallerRole(gameId);
+      if (!canManage(callerRole)) {
+        const existingPlayer = await db.execute({
+          sql: 'SELECT id FROM players WHERE game_id = ? AND user_id = ?',
+          args: [gameId, user.id],
+        });
+        if (existingPlayer.rows.length > 0) {
+          return NextResponse.json({ error: 'You already have a spot in this game' }, { status: 409 });
+        }
       }
     }
 
