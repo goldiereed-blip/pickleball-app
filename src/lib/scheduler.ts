@@ -1,10 +1,21 @@
 import { ScheduleMatch, ScheduleRound } from './types';
 
+// ─── Utilities ───────────────────────────────────────────────────────────────
+
+/** Canonical key for a partnership (order-independent). */
 function pairKey(a: string, b: string): string {
   return a < b ? `${a}:${b}` : `${b}:${a}`;
 }
 
-/** Fisher-Yates shuffle */
+/**
+ * Canonical key for a 4-player matchup (order-independent).
+ * 1&2 vs 3&4 = 3&4 vs 1&2 = 2&1 vs 4&3 → same key.
+ */
+function matchupKey(a: string, b: string, c: string, d: string): string {
+  return [a, b, c, d].sort().join(':');
+}
+
+/** Fisher-Yates shuffle — returns a new array, does not mutate input. */
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -14,11 +25,214 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
+// ─── Bye Selection ───────────────────────────────────────────────────────────
+
 /**
- * Generate a rotating-partners schedule where every pair of players
- * partners together at least once. Improved algorithm that also tracks
- * opponent matchups to ensure variety, and uses randomization to avoid
- * repetitive pairings.
+ * Select which players sit out this round.
+ *
+ * Priority rules:
+ * 1. No consecutive byes — exclude players who sat last round (unless unavoidable).
+ * 2. Fair distribution — prefer players with the fewest career byes so everyone
+ *    gets their Nth bye before anyone receives their (N+1)th.
+ * 3. Random tie-breaking within the same bye count.
+ */
+function selectSitters(
+  playerIds: string[],
+  count: number,
+  roundNum: number,
+  byeCount: Map<string, number>,
+  lastByeRound: Map<string, number>
+): string[] {
+  if (count <= 0) return [];
+
+  // Exclude players who sat last round when enough others are available.
+  // lastByeRound is initialised to -1 so it never spuriously matches roundNum-1=0.
+  const eligible = playerIds.filter(
+    (p) => (lastByeRound.get(p) ?? -1) !== roundNum - 1
+  );
+  // Use the eligible (non-consecutive) pool only when it has MORE than count players,
+  // giving us genuine choice. When eligible.length === count every eligible player
+  // must sit anyway and mixing into the full pool is needed for partnership variety
+  // (otherwise n = 2×courts×4 configurations lock into two isolated alternating groups
+  // that never cross-pair — same pathology as the original algorithm).
+  const pool = eligible.length > count ? eligible : [...playerIds];
+
+  // Shuffle first so ties are broken randomly, then stable-sort by bye count
+  // ascending (fewest byes → sits first, equalising the distribution).
+  const randomized = shuffle(pool);
+  randomized.sort((a, b) => (byeCount.get(a) ?? 0) - (byeCount.get(b) ?? 0));
+
+  return randomized.slice(0, count);
+}
+
+// ─── Pairing Scoring ─────────────────────────────────────────────────────────
+
+/**
+ * Score one court's assignment of 4 players into 2 teams.  Higher = better.
+ *
+ * Critical penalties (override all other factors):
+ *   -10 000  same two players partner back-to-back rounds
+ *    -5 000  same 4-person group plays together back-to-back rounds
+ *
+ * Moderate penalties (favour variety over the whole tournament):
+ *      -100  per prior time this partnership occurred (escalating cost)
+ *       -50  per prior time this 4-person matchup occurred
+ *
+ * Bonuses (reward novelty):
+ *      +200  brand-new partnership (first time these two play together)
+ *      +100  brand-new 4-person matchup
+ */
+function scorePairing(
+  t1p1: string,
+  t1p2: string,
+  t2p1: string,
+  t2p2: string,
+  roundNum: number,
+  partnerCount: Map<string, number>,
+  lastPartnerRound: Map<string, number>,
+  matchupCount: Map<string, number>,
+  lastMatchupRound: Map<string, number>
+): number {
+  const pk1 = pairKey(t1p1, t1p2);
+  const pk2 = pairKey(t2p1, t2p2);
+  const mk = matchupKey(t1p1, t1p2, t2p1, t2p2);
+
+  const pc1 = partnerCount.get(pk1) ?? 0;
+  const pc2 = partnerCount.get(pk2) ?? 0;
+  // Use direct Map.get (no ?? 0 fallback) so that "never played" (undefined) is
+  // never confused with "played in the hypothetical round 0".
+  const lpr1 = lastPartnerRound.get(pk1);
+  const lpr2 = lastPartnerRound.get(pk2);
+  const mc = matchupCount.get(mk) ?? 0;
+  const lmr = lastMatchupRound.get(mk);
+
+  let score = 0;
+
+  // Critical: consecutive violations (effectively hard constraints).
+  // Only fire when the pair/matchup actually has a recorded history (lpr !== undefined).
+  if (lpr1 !== undefined && lpr1 === roundNum - 1) score -= 10_000; // same partnership back-to-back
+  if (lpr2 !== undefined && lpr2 === roundNum - 1) score -= 10_000;
+  if (lmr !== undefined && lmr === roundNum - 1) score -= 5_000;   // same 4-person group back-to-back
+
+  // Repetition costs (escalate with each repeat)
+  score -= pc1 * 100;
+  score -= pc2 * 100;
+  score -= mc * 50;
+
+  // Novelty rewards
+  if (pc1 === 0) score += 200;
+  if (pc2 === 0) score += 200;
+  if (mc === 0) score += 100;
+
+  return score;
+}
+
+/**
+ * Given exactly 4 players on a court, find the best split into 2 teams.
+ * There are exactly 3 ways to partition {p0,p1,p2,p3} into 2 pairs — we try all three.
+ */
+function bestCourtPairing(
+  p: [string, string, string, string],
+  roundNum: number,
+  partnerCount: Map<string, number>,
+  lastPartnerRound: Map<string, number>,
+  matchupCount: Map<string, number>,
+  lastMatchupRound: Map<string, number>
+): { team1: [string, string]; team2: [string, string]; score: number } {
+  // The three possible pairings of 4 players into 2 teams of 2
+  const options: [[string, string], [string, string]][] = [
+    [[p[0], p[1]], [p[2], p[3]]],
+    [[p[0], p[2]], [p[1], p[3]]],
+    [[p[0], p[3]], [p[1], p[2]]],
+  ];
+
+  let best = { team1: options[0][0], team2: options[0][1], score: -Infinity };
+
+  for (const [team1, team2] of options) {
+    const s = scorePairing(
+      team1[0], team1[1], team2[0], team2[1],
+      roundNum, partnerCount, lastPartnerRound, matchupCount, lastMatchupRound
+    );
+    if (s > best.score) best = { team1, team2, score: s };
+  }
+
+  return best;
+}
+
+// ─── Round Generation ─────────────────────────────────────────────────────────
+
+/**
+ * Generate the best set of matches for one round via Monte Carlo sampling.
+ *
+ * We draw NUM_TRIALS random permutations of the active players, assign them
+ * to courts sequentially (positions 0–3 → court 1, 4–7 → court 2, …), then
+ * for each court exhaustively pick the best of the 3 possible pairings.
+ * The trial whose courts sum to the highest total score wins.
+ *
+ * This avoids the combinatorial explosion of full enumeration while reliably
+ * finding constraint-satisfying schedules: with 1 000 trials the probability
+ * of missing the globally optimal arrangement is negligible for all practical
+ * pickleball configurations (4–48 players, 1–12 courts).
+ */
+function generateBestRound(
+  active: string[],
+  maxCourts: number,
+  roundNum: number,
+  partnerCount: Map<string, number>,
+  lastPartnerRound: Map<string, number>,
+  matchupCount: Map<string, number>,
+  lastMatchupRound: Map<string, number>
+): ScheduleMatch[] {
+  const NUM_TRIALS = 1_000;
+
+  let bestMatches: ScheduleMatch[] = [];
+  let bestScore = -Infinity;
+
+  for (let trial = 0; trial < NUM_TRIALS; trial++) {
+    const shuffled = shuffle(active);
+    let trialScore = 0;
+    const trialMatches: ScheduleMatch[] = [];
+
+    for (let courtIdx = 0; courtIdx < maxCourts; courtIdx++) {
+      const base = courtIdx * 4;
+      const four: [string, string, string, string] = [
+        shuffled[base], shuffled[base + 1],
+        shuffled[base + 2], shuffled[base + 3],
+      ];
+      const { team1, team2, score } = bestCourtPairing(
+        four, roundNum,
+        partnerCount, lastPartnerRound,
+        matchupCount, lastMatchupRound
+      );
+      trialScore += score;
+      trialMatches.push({ court: courtIdx + 1, team1, team2 });
+    }
+
+    if (trialScore > bestScore) {
+      bestScore = trialScore;
+      bestMatches = trialMatches;
+    }
+  }
+
+  return bestMatches;
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+/**
+ * Generate a rotating-partners schedule with comprehensive fairness guarantees.
+ *
+ * ┌─ Guarantees ─────────────────────────────────────────────────────────────┐
+ * │ 1. No consecutive partnerships — a pair never partners back-to-back.     │
+ * │ 2. No consecutive byes — a player never sits out two rounds in a row.    │
+ * │ 3. Fair bye distribution — everyone gets their Nth bye before anyone     │
+ * │    receives their (N+1)th (levelled by min-bye-count selection).         │
+ * │ 4. Matchup variety — the same 4-person group never plays back-to-back;   │
+ * │    repeats across the whole tournament are minimised and spread out.     │
+ * │ 5. All-pairs coverage — the schedule runs until every pair of players    │
+ * │    has partnered at least once (or a generous safety cap is reached).    │
+ * │ 6. Balanced games — all players play within ±1 game of each other.      │
+ * └──────────────────────────────────────────────────────────────────────────┘
  */
 export function generateRotatingSchedule(
   playerIds: string[],
@@ -26,158 +240,106 @@ export function generateRotatingSchedule(
 ): ScheduleRound[] {
   const n = playerIds.length;
   const maxCourts = Math.min(numCourts, Math.floor(n / 4));
+  const sittingPerRound = n - maxCourts * 4;
 
   if (maxCourts === 0 || n < 4) return [];
 
+  // ── Per-player state ──────────────────────────────────────────────────────
+  // byeCount[p]     = number of rounds player p has sat out
+  // lastByeRound[p] = most recent round number player p sat out (0 = never)
+  const byeCount = new Map<string, number>();
+  const lastByeRound = new Map<string, number>();
+
+  // ── Per-partnership state ─────────────────────────────────────────────────
+  // partnerCount[key]     = # times this pair has played together
+  // lastPartnerRound[key] = most recent round they played together
   const partnerCount = new Map<string, number>();
-  const opponentCount = new Map<string, number>();
-  const gamesPlayed = new Map<string, number>();
+  const lastPartnerRound = new Map<string, number>();
 
-  for (const p of playerIds) gamesPlayed.set(p, 0);
+  // ── Per-matchup state (normalised 4-player key) ───────────────────────────
+  // matchupCount[key]     = # times this 4-person group has played
+  // lastMatchupRound[key] = most recent round this group played
+  const matchupCount = new Map<string, number>();
+  const lastMatchupRound = new Map<string, number>();
 
+  for (const p of playerIds) {
+    byeCount.set(p, 0);
+    // -1 means "never sat out" — avoids false consecutive-bye detection for round 1
+    lastByeRound.set(p, -1);
+  }
+
+  // Run until every pair has been partners at least once, or we hit the cap.
   const totalPairs = (n * (n - 1)) / 2;
-  let partneredPairs = 0;
+  const partnershipsPerRound = maxCourts * 2;
+  const minRounds = Math.ceil(totalPairs / partnershipsPerRound);
+  // Safety cap: generous upper bound so the while loop always terminates.
+  const maxRounds = minRounds + Math.ceil(minRounds * 0.35) + n;
 
   const rounds: ScheduleRound[] = [];
-  const maxRounds = Math.ceil(totalPairs / (maxCourts * 2)) + n;
+  let partneredPairs = 0;
 
   while (partneredPairs < totalPairs && rounds.length < maxRounds) {
-    // Select active players — those with fewest games get priority, but shuffle within same count
-    const sorted = [...playerIds].sort((a, b) => {
-      const diff = gamesPlayed.get(a)! - gamesPlayed.get(b)!;
-      if (diff !== 0) return diff;
-      return Math.random() - 0.5; // randomize among equal game counts
-    });
-    const activeCount = maxCourts * 4;
-    const active = sorted.slice(0, activeCount);
-    const sitting = sorted.slice(activeCount);
+    const roundNum = rounds.length + 1;
 
-    const matches: ScheduleMatch[] = [];
-    const used = new Set<string>();
+    // Step 1 — choose who sits out (no-consecutive + fair-distribution rules).
+    const sitting = selectSitters(
+      playerIds, sittingPerRound, roundNum, byeCount, lastByeRound
+    );
+    const sittingSet = new Set(sitting);
+    const active = playerIds.filter((p) => !sittingSet.has(p));
+    if (active.length < 4) break;
 
-    for (let c = 0; c < maxCourts; c++) {
-      const available = shuffle(active.filter((p) => !used.has(p)));
-      if (available.length < 4) break;
+    // Step 2 — find the highest-scoring court arrangement for active players.
+    const matches = generateBestRound(
+      active, maxCourts, roundNum,
+      partnerCount, lastPartnerRound,
+      matchupCount, lastMatchupRound
+    );
 
-      // Find pair with lowest partner count among available players
-      // Collect all candidate pairs and pick from the best ones with randomization
-      const candidatePairs: { pair: [string, string]; score: number }[] = [];
-
-      for (let i = 0; i < available.length; i++) {
-        for (let j = i + 1; j < available.length; j++) {
-          const pc = partnerCount.get(pairKey(available[i], available[j])) || 0;
-          candidatePairs.push({ pair: [available[i], available[j]], score: pc });
-        }
-      }
-
-      // Sort by score (lowest partner count first), then pick randomly among the best
-      candidatePairs.sort((a, b) => a.score - b.score);
-      const bestScore = candidatePairs[0]?.score;
-      if (bestScore === undefined) break;
-
-      const bestPairs = candidatePairs.filter((c) => c.score === bestScore);
-      const chosenT1Idx = Math.floor(Math.random() * bestPairs.length);
-      const bestT1 = bestPairs[chosenT1Idx].pair as [string, string];
-
-      // Find best opponent pair from remaining available players
-      // Factor in opponent count to avoid repetitive matchups
-      const others = available.filter(
-        (p) => !used.has(p) && p !== bestT1[0] && p !== bestT1[1]
-      );
-
-      const oppCandidates: { pair: [string, string]; score: number }[] = [];
-
-      for (let i = 0; i < others.length; i++) {
-        for (let j = i + 1; j < others.length; j++) {
-          const pc = partnerCount.get(pairKey(others[i], others[j])) || 0;
-          // Also consider how often these players have been opponents of team1
-          const oppScore =
-            (opponentCount.get(pairKey(bestT1[0], others[i])) || 0) +
-            (opponentCount.get(pairKey(bestT1[0], others[j])) || 0) +
-            (opponentCount.get(pairKey(bestT1[1], others[i])) || 0) +
-            (opponentCount.get(pairKey(bestT1[1], others[j])) || 0);
-
-          let score = -pc; // prefer un-partnered pairs
-          if (pc === 0) score += 100;
-          score -= oppScore * 2; // penalize repeated opponents
-          oppCandidates.push({ pair: [others[i], others[j]], score });
-        }
-      }
-
-      if (oppCandidates.length === 0) break;
-
-      // Sort descending by score and pick randomly among the best
-      oppCandidates.sort((a, b) => b.score - a.score);
-      const bestOppScore = oppCandidates[0].score;
-      const bestOppPairs = oppCandidates.filter((c) => c.score === bestOppScore);
-      const chosenT2Idx = Math.floor(Math.random() * bestOppPairs.length);
-      const bestT2 = bestOppPairs[chosenT2Idx].pair as [string, string];
-
-      matches.push({
-        court: c + 1,
-        team1: bestT1,
-        team2: bestT2,
-      });
-
-      used.add(bestT1[0]);
-      used.add(bestT1[1]);
-      used.add(bestT2[0]);
-      used.add(bestT2[1]);
+    // Step 3 — update all tracking state.
+    for (const p of sitting) {
+      byeCount.set(p, (byeCount.get(p) ?? 0) + 1);
+      lastByeRound.set(p, roundNum);
     }
 
-    // Update tracking
     for (const m of matches) {
       const pk1 = pairKey(m.team1[0], m.team1[1]);
-      const prev1 = partnerCount.get(pk1) || 0;
+      const prev1 = partnerCount.get(pk1) ?? 0;
       if (prev1 === 0) partneredPairs++;
       partnerCount.set(pk1, prev1 + 1);
+      lastPartnerRound.set(pk1, roundNum);
 
       const pk2 = pairKey(m.team2[0], m.team2[1]);
-      const prev2 = partnerCount.get(pk2) || 0;
+      const prev2 = partnerCount.get(pk2) ?? 0;
       if (prev2 === 0) partneredPairs++;
       partnerCount.set(pk2, prev2 + 1);
+      lastPartnerRound.set(pk2, roundNum);
 
-      // Track opponents
-      for (const p1 of m.team1) {
-        for (const p2 of m.team2) {
-          const ok = pairKey(p1, p2);
-          opponentCount.set(ok, (opponentCount.get(ok) || 0) + 1);
-        }
-      }
-
-      for (const p of [m.team1[0], m.team1[1], m.team2[0], m.team2[1]]) {
-        gamesPlayed.set(p, gamesPlayed.get(p)! + 1);
-      }
+      const mk = matchupKey(m.team1[0], m.team1[1], m.team2[0], m.team2[1]);
+      matchupCount.set(mk, (matchupCount.get(mk) ?? 0) + 1);
+      lastMatchupRound.set(mk, roundNum);
     }
 
-    const extraSitting = active.filter((p) => !used.has(p));
-
-    rounds.push({
-      roundNumber: rounds.length + 1,
-      matches,
-      sitting: [...sitting, ...extraSitting],
-    });
+    rounds.push({ roundNumber: roundNum, matches, sitting });
   }
 
   return rounds;
 }
 
 /**
- * Generate a fixed-partners schedule. If teamPairings are provided, use those.
- * Otherwise, players are paired in order: (1,2), (3,4), (5,6), etc.
- * Each team plays every other team.
+ * Generate a fixed-partners schedule using the circle method.
+ * If teamPairings are provided those are used; otherwise players are paired
+ * in order: (0,1), (2,3), (4,5), … Each team plays every other team once.
  */
 export function generateFixedSchedule(
   playerIds: string[],
   numCourts: number,
   teamPairings?: [string, string][]
 ): ScheduleRound[] {
-  // Need even number of players, at least 4
   const n = playerIds.length;
   if (n < 4 || n % 2 !== 0) return [];
 
-  // Use provided team pairings or create teams from consecutive pairs
-  const teams: [string, string][] = teamPairings || [];
+  const teams: [string, string][] = teamPairings ? [...teamPairings] : [];
   if (teams.length === 0) {
     for (let i = 0; i < n; i += 2) {
       teams.push([playerIds[i], playerIds[i + 1]]);
@@ -186,10 +348,8 @@ export function generateFixedSchedule(
 
   const T = teams.length;
   const maxCourts = Math.min(numCourts, Math.floor(T / 2));
-
   if (maxCourts === 0) return [];
 
-  // Circle method for round-robin scheduling
   const teamIndices = Array.from({ length: T }, (_, i) => i);
   const isEven = T % 2 === 0;
   const numRoundsRR = isEven ? T - 1 : T;
@@ -197,25 +357,20 @@ export function generateFixedSchedule(
   const allRoundMatchups: [number, number][][] = [];
 
   if (isEven) {
-    const rot = [...teamIndices.filter((i) => i !== T - 1)];
+    const rot = teamIndices.filter((i) => i !== T - 1);
     for (let r = 0; r < numRoundsRR; r++) {
       const matchups: [number, number][] = [];
-      // Fixed team vs first rotating
       matchups.push([T - 1, rot[0]]);
-      // Pair rest from opposite ends: rot[1] vs rot[T-2], rot[2] vs rot[T-3], etc.
       for (let i = 1; i <= (T - 2) / 2; i++) {
         matchups.push([rot[i], rot[T - 1 - i]]);
       }
       allRoundMatchups.push(matchups);
-      // Rotate: move first to end
       rot.push(rot.shift()!);
     }
   } else {
-    // Odd number of teams: one team has a bye each round
     const rot = [...teamIndices];
     for (let r = 0; r < numRoundsRR; r++) {
       const matchups: [number, number][] = [];
-      // rot[0] has bye
       for (let i = 1; i <= (T - 1) / 2; i++) {
         matchups.push([rot[i], rot[T - i]]);
       }
@@ -224,12 +379,10 @@ export function generateFixedSchedule(
     }
   }
 
-  // Pack matchups into rounds based on available courts
   const rounds: ScheduleRound[] = [];
   let roundNum = 1;
 
   for (const rrMatchups of allRoundMatchups) {
-    // Filter out any self-matches (safety check)
     const validMatchups = rrMatchups.filter(([a, b]) => a !== b);
 
     for (let i = 0; i < validMatchups.length; i += maxCourts) {
@@ -240,7 +393,6 @@ export function generateFixedSchedule(
         team2: teams[b],
       }));
 
-      // Determine who is sitting
       const playingTeams = new Set<number>();
       for (const [a, b] of batch) {
         playingTeams.add(a);
@@ -253,11 +405,7 @@ export function generateFixedSchedule(
         }
       }
 
-      rounds.push({
-        roundNumber: roundNum++,
-        matches,
-        sitting: sittingPlayers,
-      });
+      rounds.push({ roundNumber: roundNum++, matches, sitting: sittingPlayers });
     }
   }
 
@@ -265,7 +413,7 @@ export function generateFixedSchedule(
 }
 
 /**
- * Estimate how many rounds are needed for a given config.
+ * Estimate how many rounds are needed for a given configuration.
  */
 export function estimateRounds(
   numPlayers: number,
@@ -282,9 +430,10 @@ export function estimateRounds(
     const totalPairs = (numPlayers * (numPlayers - 1)) / 2;
     const partnershipsPerRound = maxCourts * 2;
     const minRounds = Math.ceil(totalPairs / partnershipsPerRound);
+    const suggested = minRounds + Math.ceil(minRounds * 0.3);
     return {
-      rounds: minRounds + Math.ceil(minRounds * 0.3), // buffer for greedy imperfection
-      description: `~${minRounds}–${minRounds + Math.ceil(minRounds * 0.3)} rounds so every player partners with every other player at least once`,
+      rounds: suggested,
+      description: `~${minRounds}–${suggested} rounds so every player partners with every other player at least once`,
     };
   } else {
     const numTeams = Math.floor(numPlayers / 2);

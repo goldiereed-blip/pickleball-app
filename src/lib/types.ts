@@ -5,6 +5,7 @@ export interface User {
   first_name: string;
   last_name: string;
   created_at: string;
+  has_seen_tutorial: boolean;
 }
 
 export interface Session {
@@ -27,6 +28,9 @@ export interface Game {
   max_players: number;
   scheduled_at: string | null;
   created_by: string | null;
+  group_id: string | null;
+  group_code?: string;
+  group_name?: string;
   created_at: string;
 }
 
@@ -42,6 +46,7 @@ export interface Player {
   is_here: number;
   role: PlayerRole;
   waitlist_position: number | null;
+  rsvp_status: 'attending' | 'declined' | 'pending' | null;
   created_at: string;
 }
 
@@ -115,6 +120,40 @@ export interface Ranking {
   games_played: number;
   division_id?: string | null;
   division_name?: string | null;
+}
+
+export interface GroupEvent extends Game {
+  spots_filled: number;
+  waitlist_count: number;
+  my_player_id: string | null;
+  my_is_playing: number | null;
+  my_waitlist_position: number | null;
+}
+
+// Groups
+export interface Group {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  max_members: number | null;
+  created_by: string;
+  created_at: string;
+}
+
+export type GroupRole = 'admin' | 'member';
+
+export interface GroupMember {
+  id: string;
+  group_id: string;
+  user_id: string;
+  role: GroupRole;
+  created_at: string;
+}
+
+export interface GroupMemberWithUser extends GroupMember {
+  display_name: string;
+  email: string;
 }
 
 export interface ScheduleMatch {

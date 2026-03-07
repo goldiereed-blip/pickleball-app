@@ -143,6 +143,31 @@ export async function initDb(): Promise<void> {
     args: [],
   });
 
+  // Groups tables
+  await db.execute({
+    sql: `CREATE TABLE IF NOT EXISTS groups (
+      id TEXT PRIMARY KEY,
+      code TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      max_members INTEGER,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    args: [],
+  });
+
+  await db.execute({
+    sql: `CREATE TABLE IF NOT EXISTS group_members (
+      id TEXT PRIMARY KEY,
+      group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role TEXT NOT NULL DEFAULT 'member',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`,
+    args: [],
+  });
+
   // Idempotent column migrations via try/catch
   const alterStatements = [
     'ALTER TABLE games ADD COLUMN num_rounds INTEGER',
@@ -160,6 +185,9 @@ export async function initDb(): Promise<void> {
     "ALTER TABLE users ADD COLUMN last_name TEXT NOT NULL DEFAULT ''",
     'ALTER TABLE games ADD COLUMN max_players INTEGER NOT NULL DEFAULT 48',
     'ALTER TABLE players ADD COLUMN waitlist_position INTEGER',
+    'ALTER TABLE games ADD COLUMN group_id TEXT',
+    'ALTER TABLE players ADD COLUMN rsvp_status TEXT',
+    'ALTER TABLE users ADD COLUMN has_seen_tutorial INTEGER NOT NULL DEFAULT 0',
   ];
   for (const sql of alterStatements) {
     try {

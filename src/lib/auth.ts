@@ -32,7 +32,8 @@ export async function getSession(): Promise<User | null> {
 
     const db = getDb();
     const result = await db.execute({
-      sql: `SELECT u.id, u.email, u.display_name, u.first_name, u.last_name, u.created_at
+      sql: `SELECT u.id, u.email, u.display_name, u.first_name, u.last_name, u.created_at,
+                   u.has_seen_tutorial
             FROM sessions s
             JOIN users u ON s.user_id = u.id
             WHERE s.id = ? AND s.expires_at > datetime('now')`,
@@ -48,6 +49,7 @@ export async function getSession(): Promise<User | null> {
       first_name: (result.rows[0].first_name as string) || '',
       last_name: (result.rows[0].last_name as string) || '',
       created_at: result.rows[0].created_at as string,
+      has_seen_tutorial: result.rows[0].has_seen_tutorial === 1,
     };
   } catch {
     return null;

@@ -162,6 +162,20 @@ export default function ProfilePage() {
           </button>
         </div>
 
+        {/* Tutorial Section */}
+        <div className="card space-y-3">
+          <h3 className="font-semibold text-gray-700">App Tour</h3>
+          <p className="text-sm text-gray-500">
+            Replay the introduction tour to get a quick overview of the app.
+          </p>
+          <button
+            onClick={() => router.push('/?tutorial=1')}
+            className="btn-secondary"
+          >
+            View Tutorial
+          </button>
+        </div>
+
         {/* Password Section */}
         <div className="card space-y-3">
           <h3 className="font-semibold text-gray-700">Change Password</h3>

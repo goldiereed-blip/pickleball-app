@@ -141,6 +141,37 @@ export async function PATCH(
       });
     }
 
+    // RSVP status — player can update their own, or host/cohost can update any
+    if (typeof body.rsvp === 'string' && ['attending', 'declined', 'pending'].includes(body.rsvp)) {
+      const session = await getSession();
+      const targetPlayer = await db.execute({
+        sql: 'SELECT user_id, is_playing, waitlist_position FROM players WHERE id = ?',
+        args: [id],
+      });
+      if (targetPlayer.rows.length === 0) {
+        return NextResponse.json({ error: 'Player not found' }, { status: 404 });
+      }
+      const playerUserId = targetPlayer.rows[0].user_id as string | null;
+      const callerRole = await getCallerRole(gameId);
+      const isSelf = session && playerUserId && session.id === playerUserId;
+      if (!isSelf && !canManage(callerRole)) {
+        return NextResponse.json({ error: 'Cannot update RSVP for another player' }, { status: 403 });
+      }
+
+      const newIsPlaying = body.rsvp === 'declined' ? 0 : 1;
+      const wasPlaying = targetPlayer.rows[0].is_playing as number;
+      const wasOnWaitlist = targetPlayer.rows[0].waitlist_position !== null;
+
+      await db.execute({
+        sql: 'UPDATE players SET rsvp_status = ?, is_playing = ? WHERE id = ?',
+        args: [body.rsvp, newIsPlaying, id],
+      });
+
+      if (body.rsvp === 'declined' && wasPlaying && !wasOnWaitlist) {
+        await promoteFromWaitlist(gameId);
+      }
+    }
+
     // Role change — only host can change roles
     if (typeof body.role === 'string' && ['host', 'cohost', 'player'].includes(body.role)) {
       const callerRole = await getCallerRole(gameId);

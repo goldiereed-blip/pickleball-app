@@ -8,6 +8,7 @@ interface User {
   display_name: string;
   first_name: string;
   last_name: string;
+  has_seen_tutorial?: boolean;
 }
 
 interface AuthContextType {
@@ -62,7 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     const data = await res.json();
     if (!res.ok) return { error: data.error };
-    setUser(data.user);
+    await refresh();
     return {};
   };
 
@@ -74,7 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     const data = await res.json();
     if (!res.ok) return { error: data.error };
-    setUser(data.user);
+    await refresh();
     return {};
   };
 

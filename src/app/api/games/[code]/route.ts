@@ -12,7 +12,10 @@ export async function GET(
     const { code } = params;
 
     const result = await db.execute({
-      sql: 'SELECT * FROM games WHERE code = ?',
+      sql: `SELECT g.*, gr.name as group_name, gr.code as group_code
+            FROM games g
+            LEFT JOIN groups gr ON g.group_id = gr.id
+            WHERE g.code = ?`,
       args: [code.toUpperCase()],
     });
 

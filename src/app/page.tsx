@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
+import TutorialTour from '@/components/TutorialTour';
 
 interface MyGame {
   id: string;
@@ -14,17 +15,34 @@ interface MyGame {
   started: number;
 }
 
+interface MyGroup {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  member_count: number;
+  active_events_count: number;
+  next_event_at: string | null;
+  user_role: 'admin' | 'member';
+}
+
 export default function Home() {
   const router = useRouter();
-  const { user, loading: authLoading, logout } = useAuth();
-  const [view, setView] = useState<'home' | 'create' | 'join'>('home');
+  const { user, loading: authLoading, logout, refresh } = useAuth();
+  const [view, setView] = useState<'home' | 'create' | 'join' | 'create-group' | 'join-group'>('home');
+  const [runTour, setRunTour] = useState(false);
   const [myGames, setMyGames] = useState<MyGame[]>([]);
+  const [myGroups, setMyGroups] = useState<MyGroup[]>([]);
   const [gameName, setGameName] = useState('');
   const [numCourts, setNumCourts] = useState('2');
   const [mode, setMode] = useState<'rotating' | 'fixed'>('rotating');
   const [maxPlayers, setMaxPlayers] = useState('12');
   const [scheduledAt, setScheduledAt] = useState('');
   const [joinCode, setJoinCode] = useState('');
+  const [groupName, setGroupName] = useState('');
+  const [groupDescription, setGroupDescription] = useState('');
+  const [groupMaxMembers, setGroupMaxMembers] = useState('');
+  const [groupJoinCode, setGroupJoinCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -35,11 +53,33 @@ export default function Home() {
     }
   }, [authLoading, user, router]);
 
+  // Tutorial trigger: auto-start for new users or when ?tutorial=1 is in the URL
+  useEffect(() => {
+    if (!user || view !== 'home') return;
+    const forceTutorial =
+      typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('tutorial') === '1';
+    if (forceTutorial || user.has_seen_tutorial === false) {
+      const timer = setTimeout(() => setRunTour(true), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [user, view]);
+
+  const handleTourFinish = async () => {
+    setRunTour(false);
+    await fetch('/api/users/tutorial', { method: 'PATCH' });
+    await refresh();
+  };
+
   useEffect(() => {
     if (user) {
       fetch(`/api/users/${user.id}/games`)
         .then((res) => res.json())
         .then((data) => { if (Array.isArray(data)) setMyGames(data); })
+        .catch(() => {});
+      fetch('/api/groups')
+        .then((res) => res.json())
+        .then((data) => { if (Array.isArray(data)) setMyGroups(data); })
         .catch(() => {});
     }
   }, [user]);
@@ -87,6 +127,53 @@ export default function Home() {
       router.push(`/join/${code}`);
     } catch {
       setError('Game not found. Check the join code and try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const createGroup = async () => {
+    if (!groupName.trim()) {
+      setError('Please enter a group name');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const maxNum = parseInt(groupMaxMembers);
+      const res = await fetch('/api/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: groupName.trim(),
+          description: groupDescription.trim() || null,
+          max_members: !isNaN(maxNum) && maxNum >= 2 ? maxNum : null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      router.push(`/group/${data.code}`);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to create group');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const joinGroupByCode = async () => {
+    const code = groupJoinCode.trim().toUpperCase();
+    if (code.length < 4) {
+      setError('Please enter a valid invite code');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/groups/${code}`);
+      if (!res.ok) throw new Error('Group not found');
+      router.push(`/group/join/${code}`);
+    } catch {
+      setError('Group not found. Check the invite code and try again.');
     } finally {
       setLoading(false);
     }
@@ -292,6 +379,148 @@ export default function Home() {
     );
   }
 
+  if (view === 'create-group') {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="w-full max-w-md space-y-6">
+          <button
+            onClick={() => { setView('home'); setError(''); }}
+            className="text-primary-700 font-medium text-lg"
+          >
+            &larr; Back
+          </button>
+
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Create Group</h1>
+            <p className="text-gray-500 text-sm mt-1">
+              Organize your regular players for recurring games. Members will be auto-added to future events you create.
+            </p>
+          </div>
+
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+              {error}
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">
+                Group Name
+              </label>
+              <input
+                type="text"
+                className="input-field"
+                placeholder="e.g., Tuesday Night Picklers"
+                value={groupName}
+                onChange={(e) => setGroupName(e.target.value)}
+                maxLength={50}
+              />
+              {groupName.trim().length > 0 &&
+               myGroups.some((g) => g.name.toLowerCase() === groupName.trim().toLowerCase()) && (
+                <p className="mt-1 text-xs text-amber-600">
+                  You already have a group called &ldquo;{groupName.trim()}&rdquo;. You can still create this one.
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">
+                Description
+              </label>
+              <textarea
+                className="input-field"
+                rows={3}
+                placeholder="Optional — describe your group"
+                value={groupDescription}
+                onChange={(e) => setGroupDescription(e.target.value)}
+                maxLength={200}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">
+                Max Members
+              </label>
+              <input
+                type="number"
+                inputMode="numeric"
+                className="input-field"
+                value={groupMaxMembers}
+                onChange={(e) => setGroupMaxMembers(e.target.value)}
+                onBlur={() => {
+                  const n = parseInt(groupMaxMembers);
+                  if (groupMaxMembers && (isNaN(n) || n < 2)) setGroupMaxMembers('2');
+                  else if (n > 100) setGroupMaxMembers('100');
+                  else if (!isNaN(n)) setGroupMaxMembers(String(n));
+                }}
+                placeholder="No limit"
+                min="2"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Leave empty for no limit
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={createGroup}
+            disabled={loading}
+            className="btn-primary"
+          >
+            {loading ? 'Creating...' : 'Create Group'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'join-group') {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="w-full max-w-md space-y-6">
+          <button
+            onClick={() => { setView('home'); setError(''); }}
+            className="text-primary-700 font-medium text-lg"
+          >
+            &larr; Back
+          </button>
+
+          <h1 className="text-3xl font-bold text-gray-900">Join Group</h1>
+
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm">
+              {error}
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">
+              Enter Invite Code
+            </label>
+            <input
+              type="text"
+              className="input-field text-center tracking-widest uppercase"
+              placeholder="ABC123"
+              value={groupJoinCode}
+              onChange={(e) => setGroupJoinCode(e.target.value.toUpperCase())}
+              maxLength={6}
+              autoCapitalize="characters"
+            />
+          </div>
+
+          <button
+            onClick={joinGroupByCode}
+            disabled={loading}
+            className="btn-primary"
+          >
+            {loading ? 'Looking up...' : 'Join Group'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // Home view
   const activeGames = myGames.filter((g) => !g.is_complete);
 
@@ -300,6 +529,7 @@ export default function Home() {
       {/* Auth header */}
       <div className="w-full max-w-md mb-4 flex justify-end gap-2">
         <button
+          id="tutorial-profile"
           onClick={() => router.push('/profile')}
           className="text-sm text-primary-700 font-medium py-1 px-3 border border-primary-200 rounded-lg"
         >
@@ -337,12 +567,65 @@ export default function Home() {
         </div>
 
         <div className="space-y-3 pt-6">
-          <button onClick={() => setView('create')} className="btn-primary">
+          <button id="tutorial-create-game" onClick={() => setView('create')} className="btn-primary">
             Create New Game
           </button>
-          <button onClick={() => setView('join')} className="btn-secondary">
+          <button id="tutorial-join-game" onClick={() => setView('join')} className="btn-secondary">
             Join Existing Game
           </button>
+        </div>
+
+        {/* Groups section */}
+        <div id="tutorial-groups" className="space-y-3 pt-2">
+          <div className="flex gap-2">
+            <button
+              onClick={() => setView('create-group')}
+              className="flex-1 py-3 px-3 rounded-xl font-semibold text-sm bg-primary-50 text-primary-700 border border-primary-200 active:bg-primary-100"
+            >
+              Create Group
+            </button>
+            <button
+              onClick={() => setView('join-group')}
+              className="flex-1 py-3 px-3 rounded-xl font-semibold text-sm bg-primary-50 text-primary-700 border border-primary-200 active:bg-primary-100"
+            >
+              Join Group
+            </button>
+          </div>
+        </div>
+
+        {/* My Groups */}
+        <div className="pt-4 text-left">
+          {myGroups.length > 0 ? (
+            <>
+              <h3 className="font-semibold text-gray-700 mb-2">My Groups</h3>
+              <div className="space-y-2">
+                {myGroups.map((g) => (
+                  <button
+                    key={g.id}
+                    onClick={() => router.push(`/group/${g.code}`)}
+                    className="w-full text-left card active:bg-gray-50 flex items-center justify-between"
+                  >
+                    <div>
+                      <p className="font-medium text-sm">{g.name}</p>
+                      <p className="text-xs text-gray-500">
+                        {g.member_count} member{g.member_count !== 1 ? 's' : ''}
+                        {g.next_event_at
+                          ? ` — Next: ${new Date(g.next_event_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+                          : g.active_events_count > 0 ? ` — ${g.active_events_count} active` : ''}
+                      </p>
+                    </div>
+                    <span className="font-mono text-xs text-primary-700 font-bold">{g.code}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            !authLoading && (
+              <p className="text-xs text-gray-400 text-center pt-1">
+                Create a group to organize recurring games with the same players
+              </p>
+            )
+          )}
         </div>
 
         {/* My Active Games */}
@@ -374,6 +657,8 @@ export default function Home() {
           Organize round robin tournaments with up to 48 players
         </p>
       </div>
+
+      <TutorialTour run={runTour} onFinish={handleTourFinish} />
     </div>
   );
 }

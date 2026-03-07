@@ -126,8 +126,8 @@ export async function POST(
     }
 
     await db.execute({
-      sql: 'INSERT INTO players (id, game_id, name, is_playing, order_num, role, waitlist_position) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      args: [id, gameId, name.trim(), isPlaying, currentTotal, role, waitlistPosition],
+      sql: 'INSERT INTO players (id, game_id, name, is_playing, order_num, role, waitlist_position, user_id, claimed_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      args: [id, gameId, name.trim(), isPlaying, currentTotal, role, waitlistPosition, user?.id || null, user?.id || null],
     });
 
     return NextResponse.json({

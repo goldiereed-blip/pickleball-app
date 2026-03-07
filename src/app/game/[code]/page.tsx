@@ -357,6 +357,17 @@ export default function GamePage() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-4">
+      {game?.group_code && (
+        <div className="max-w-lg mx-auto px-4 pt-3">
+          <button
+            onClick={() => router.push(`/group/${game.group_code}`)}
+            className="flex items-center gap-1 text-sm text-primary-700 font-medium"
+          >
+            &larr; Back to {game.group_name || 'Group'}
+          </button>
+        </div>
+      )}
+
       <GameHeader
         game={game!}
         code={code}
@@ -404,24 +415,26 @@ export default function GamePage() {
 
       <main className="max-w-lg mx-auto px-4 space-y-4">
         {tab === 'players' && (
-          <PlayersTab
-            game={game!}
-            code={code}
-            players={players}
-            activePlayers={activePlayers}
-            teams={teams}
-            divisions={divisions}
-            isStarted={isStarted}
-            deviceId={deviceId}
-            claimedPlayerId={claimedPlayerId}
-            currentPlayer={currentPlayer}
-            currentUserId={user?.id || null}
-            generatingSchedule={generatingSchedule}
-            onFetchData={fetchData}
-            onStartRoundRobin={startRoundRobin}
-            onGenerateSchedule={generateSchedule}
-            onClaimPlayer={claimPlayer}
-          />
+          <>
+            <PlayersTab
+              game={game!}
+              code={code}
+              players={players}
+              activePlayers={activePlayers}
+              teams={teams}
+              divisions={divisions}
+              isStarted={isStarted}
+              deviceId={deviceId}
+              claimedPlayerId={claimedPlayerId}
+              currentPlayer={currentPlayer}
+              currentUserId={user?.id || null}
+              generatingSchedule={generatingSchedule}
+              onFetchData={fetchData}
+              onStartRoundRobin={startRoundRobin}
+              onGenerateSchedule={generateSchedule}
+              onClaimPlayer={claimPlayer}
+            />
+          </>
         )}
 
         {tab === 'divisions' && (
