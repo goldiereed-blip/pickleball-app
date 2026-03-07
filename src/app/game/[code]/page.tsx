@@ -13,7 +13,7 @@ import ScheduleTab from '@/components/game/ScheduleTab';
 import ScoresTab from '@/components/game/ScoresTab';
 import RankingsTab from '@/components/game/RankingsTab';
 import MyGamesTab from '@/components/game/MyGamesTab';
-import { RoundConfirmModal, DeleteConfirmModal, ShareModal, ReopenConfirmModal } from '@/components/game/Modals';
+import { RoundConfirmModal, DeleteConfirmModal, ShareModal, ReopenConfirmModal, EditSettingsModal } from '@/components/game/Modals';
 
 function getDeviceId(): string {
   if (typeof window === 'undefined') return '';
@@ -76,6 +76,13 @@ export default function GamePage() {
   // Reopen game
   const [showReopenConfirm, setShowReopenConfirm] = useState(false);
   const [reopening, setReopening] = useState(false);
+
+  // Edit game settings
+  const [showEditSettings, setShowEditSettings] = useState(false);
+  const [editCourts, setEditCourts] = useState('');
+  const [editMaxPlayers, setEditMaxPlayers] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState('');
 
   // Team pairing
   interface TeamPairing { id: string; player1_id: string; player2_id: string; player1_name: string; player2_name: string; team_name: string | null; }
@@ -306,6 +313,67 @@ export default function GamePage() {
     }
   };
 
+  const openEditSettings = () => {
+    if (!game) return;
+    setEditCourts(String(game.num_courts));
+    setEditMaxPlayers(String(game.max_players));
+    setEditError('');
+    setShowEditSettings(true);
+  };
+
+  const saveSettings = async () => {
+    if (!game) return;
+    const courts = parseInt(editCourts);
+    const maxP = parseInt(editMaxPlayers);
+
+    if (isNaN(courts) || courts < 1 || courts > 12) {
+      setEditError('Courts must be between 1 and 12');
+      return;
+    }
+    if (isNaN(maxP) || maxP < 4 || maxP > 48) {
+      setEditError('Max players must be between 4 and 48');
+      return;
+    }
+
+    const body: Record<string, number> = {};
+    if (courts !== game.num_courts) body.num_courts = courts;
+    if (maxP !== game.max_players) body.max_players = maxP;
+
+    if (Object.keys(body).length === 0) {
+      setShowEditSettings(false);
+      return;
+    }
+
+    setEditSaving(true);
+    setEditError('');
+    try {
+      const res = await fetch(`/api/games/${code}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setEditError(data.error || 'Failed to save settings');
+        return;
+      }
+      if (data.needs_schedule_regen) {
+        const schedRes = await fetch(`/api/games/${code}/schedule`, { method: 'POST' });
+        const schedData = await schedRes.json();
+        if (!schedRes.ok) {
+          setEditError(schedData.error || 'Failed to regenerate schedule');
+          return;
+        }
+      }
+      setShowEditSettings(false);
+      fetchData();
+    } catch {
+      setEditError('Failed to save settings');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   const shareResults = () => {
     const lines = [`${game?.name} - Final Results`];
     rankings.forEach((r, i) => {
@@ -348,6 +416,9 @@ export default function GamePage() {
   const isStarted = !!game?.started;
   const currentPlayer = players.find((p) => (user && p.user_id === user.id) || p.claimed_by === deviceId) || null;
   const canEditScores = !!currentPlayer && (currentPlayer.waitlist_position === null || currentPlayer.waitlist_position === undefined);
+  const isHostOrCohost = currentPlayer?.role === 'host' || currentPlayer?.role === 'cohost';
+  const hasScores = completedMatches > 0;
+  const canEditSettings = isHostOrCohost && !game?.is_complete;
 
   const allTabs: Tab[] = ['players'];
   // Divisions tab hidden until ready for production
@@ -380,7 +451,7 @@ export default function GamePage() {
       />
 
       {/* Game management buttons for host/cohost */}
-      {isStarted && game && !game.is_complete && (currentPlayer?.role === 'host' || currentPlayer?.role === 'cohost') && (
+      {isStarted && game && !game.is_complete && isHostOrCohost && (
         <div className="max-w-lg mx-auto px-4 mt-2 space-y-2">
           <div className="flex gap-2">
             <button onClick={completeGame} className="flex-1 py-2 bg-green-600 text-white text-sm font-semibold rounded-xl">
@@ -403,6 +474,19 @@ export default function GamePage() {
           )}
         </div>
       )}
+
+      {/* Edit Game Settings — host/cohost only, any time before completion */}
+      {canEditSettings && (
+        <div className="max-w-lg mx-auto px-4 mt-2">
+          <button
+            onClick={openEditSettings}
+            className="w-full py-2 bg-primary-50 text-primary-700 text-sm font-semibold rounded-xl border border-primary-200 active:bg-primary-100"
+          >
+            Edit Game Settings
+          </button>
+        </div>
+      )}
+
       {!!game?.is_complete && rankings.length > 0 && (
         <div className="max-w-lg mx-auto px-4 mt-2">
           <button onClick={shareResults} className="w-full py-2 bg-primary-600 text-white text-sm font-semibold rounded-xl">
@@ -523,6 +607,21 @@ export default function GamePage() {
           qrDataUrl={qrDataUrl}
           onShareLink={shareLink}
           onClose={() => setShowShare(false)}
+        />
+      )}
+
+      {showEditSettings && game && (
+        <EditSettingsModal
+          game={game}
+          courts={editCourts}
+          maxPlayers={editMaxPlayers}
+          saving={editSaving}
+          error={editError}
+          hasScores={hasScores}
+          onCourtsChange={setEditCourts}
+          onMaxPlayersChange={setEditMaxPlayers}
+          onSave={saveSettings}
+          onClose={() => !editSaving && setShowEditSettings(false)}
         />
       )}
     </div>

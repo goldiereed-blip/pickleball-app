@@ -118,9 +118,18 @@ export async function PATCH(
       });
     }
 
+    let needsScheduleRegen = false;
+
     if (typeof body.max_players === 'number') {
       if (!canManage(callerRole)) {
         return NextResponse.json({ error: 'Only host or co-host can change max players' }, { status: 403 });
+      }
+      const scored = await db.execute({
+        sql: 'SELECT COUNT(*) as cnt FROM matches WHERE game_id = ? AND is_completed = 1',
+        args: [gameId],
+      });
+      if ((scored.rows[0].cnt as number) > 0) {
+        return NextResponse.json({ error: 'Cannot change max players after scores have been entered' }, { status: 400 });
       }
       const clamped = Math.max(4, Math.min(48, body.max_players));
       await db.execute({
@@ -129,7 +138,35 @@ export async function PATCH(
       });
     }
 
-    return NextResponse.json({ success: true });
+    if (typeof body.num_courts === 'number') {
+      if (!canManage(callerRole)) {
+        return NextResponse.json({ error: 'Only host or co-host can change court count' }, { status: 403 });
+      }
+      const scored = await db.execute({
+        sql: 'SELECT COUNT(*) as cnt FROM matches WHERE game_id = ? AND is_completed = 1',
+        args: [gameId],
+      });
+      if ((scored.rows[0].cnt as number) > 0) {
+        return NextResponse.json({ error: 'Cannot change courts after scores have been entered' }, { status: 400 });
+      }
+      const clamped = Math.max(1, Math.min(12, body.num_courts));
+      await db.execute({
+        sql: 'UPDATE games SET num_courts = ? WHERE id = ?',
+        args: [clamped, gameId],
+      });
+      // If a schedule already exists, clear it so it will be regenerated with the new court count
+      if ((game.rows[0].started as number) && (game.rows[0].schedule_generated as number)) {
+        await db.execute({ sql: 'DELETE FROM matches WHERE game_id = ?', args: [gameId] });
+        await db.execute({ sql: 'DELETE FROM rounds WHERE game_id = ?', args: [gameId] });
+        await db.execute({
+          sql: 'UPDATE games SET schedule_generated = 0 WHERE id = ?',
+          args: [gameId],
+        });
+        needsScheduleRegen = true;
+      }
+    }
+
+    return NextResponse.json({ success: true, needs_schedule_regen: needsScheduleRegen });
   } catch (e: unknown) {
     console.error('PATCH /api/games/[code] error:', e);
     return NextResponse.json(

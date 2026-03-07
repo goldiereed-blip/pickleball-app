@@ -186,6 +186,115 @@ export function ReopenConfirmModal({ onReopen, onClose }: ReopenConfirmModalProp
   );
 }
 
+interface EditSettingsModalProps {
+  game: Game;
+  courts: string;
+  maxPlayers: string;
+  saving: boolean;
+  error: string;
+  hasScores: boolean;
+  onCourtsChange: (v: string) => void;
+  onMaxPlayersChange: (v: string) => void;
+  onSave: () => void;
+  onClose: () => void;
+}
+
+export function EditSettingsModal({
+  game, courts, maxPlayers, saving, error, hasScores,
+  onCourtsChange, onMaxPlayersChange, onSave, onClose,
+}: EditSettingsModalProps) {
+  const isStarted = !!game.started;
+  const willRegen = isStarted && !hasScores;
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl p-6 max-w-sm w-full space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-xl font-bold text-center">Edit Game Settings</h2>
+
+        {hasScores && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-center">
+            <p className="text-sm text-red-700 font-medium">
+              Settings are locked after scores have been entered.
+            </p>
+          </div>
+        )}
+
+        {!hasScores && willRegen && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+            <p className="text-sm text-amber-700">
+              Changing courts will clear and regenerate the schedule with the new court count.
+            </p>
+          </div>
+        )}
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Number of Courts
+            </label>
+            <p className="text-xs text-gray-400 mb-1">Current: {game.num_courts}</p>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={12}
+              value={courts}
+              onChange={(e) => onCourtsChange(e.target.value)}
+              disabled={hasScores || saving}
+              className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm disabled:opacity-50 disabled:bg-gray-50"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Max Players
+            </label>
+            <p className="text-xs text-gray-400 mb-1">Current: {game.max_players}</p>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={4}
+              max={48}
+              value={maxPlayers}
+              onChange={(e) => onMaxPlayersChange(e.target.value)}
+              disabled={hasScores || saving}
+              className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm disabled:opacity-50 disabled:bg-gray-50"
+            />
+          </div>
+        </div>
+
+        {error && (
+          <p className="text-sm text-red-600 text-center">{error}</p>
+        )}
+
+        <div className="space-y-2">
+          {!hasScores && (
+            <button
+              onClick={onSave}
+              disabled={saving}
+              className="btn-primary disabled:opacity-50"
+            >
+              {saving
+                ? 'Saving...'
+                : willRegen
+                ? 'Save & Regenerate Schedule'
+                : 'Save Changes'}
+            </button>
+          )}
+          <button onClick={onClose} disabled={saving} className="btn-secondary">
+            {hasScores ? 'Close' : 'Cancel'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface ExitConfirmModalProps {
   onSaveAndExit: () => void;
   onDeleteAndExit: () => void;
