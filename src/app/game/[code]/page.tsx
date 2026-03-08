@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import type { Game, Player, RoundWithMatches, Ranking, Division } from '@/lib/types';
@@ -88,6 +88,9 @@ export default function GamePage() {
   interface TeamPairing { id: string; player1_id: string; player2_id: string; player1_name: string; player2_name: string; team_name: string | null; }
   const [teams, setTeams] = useState<TeamPairing[]>([]);
 
+  // Non-member redirect: only check once after initial load
+  const redirectChecked = useRef(false);
+
   const deviceId = typeof window !== 'undefined' ? getDeviceId() : '';
 
   const fetchData = useCallback(async () => {
@@ -144,6 +147,18 @@ export default function GamePage() {
     const interval = setInterval(fetchData, 5000);
     return () => clearInterval(interval);
   }, [fetchData]);
+
+  // Redirect non-members to the join page (handles direct URL sharing)
+  useEffect(() => {
+    if (loading || !user || redirectChecked.current) return;
+    redirectChecked.current = true;
+    const inGame = players.some(
+      (p) => p.user_id === user.id || (deviceId && p.claimed_by === deviceId)
+    );
+    if (!inGame) {
+      router.replace(`/join/${code}`);
+    }
+  }, [loading, user, players, deviceId, code, router]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
