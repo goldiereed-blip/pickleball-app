@@ -56,18 +56,14 @@ export default function PlayersTab({
   const [teamPlayer2, setTeamPlayer2] = useState('');
   const [showHostTransfer, setShowHostTransfer] = useState(false);
   const [transferTarget, setTransferTarget] = useState('');
-  const [editingMaxPlayers, setEditingMaxPlayers] = useState(false);
-  const [newMaxPlayers, setNewMaxPlayers] = useState(String(game.max_players || 48));
 
   const pairedPlayerIds = new Set(teams.flatMap((t) => [t.player1_id, t.player2_id]));
   const unpairedPlayers = activePlayers.filter((p) => !pairedPlayerIds.has(p.id));
   const allPaired = game.mode === 'fixed' && activePlayers.length >= 4 && activePlayers.length % 2 === 0 && unpairedPlayers.length === 0;
 
-  // Permission checks — default to false if no currentPlayer
   const canManage = currentPlayer ? isHostOrCohost(currentPlayer) : false;
   const isCurrentHost = currentPlayer ? isHost(currentPlayer) : false;
 
-  // Split players into active roster and waitlist
   const rosterPlayers = players.filter((p) => p.waitlist_position === null || p.waitlist_position === undefined);
   const waitlistPlayers = players
     .filter((p) => p.waitlist_position !== null && p.waitlist_position !== undefined)
@@ -76,6 +72,9 @@ export default function PlayersTab({
   const maxPlayers = game.max_players || 48;
   const activeCount = activePlayers.length;
   const isFull = activeCount >= maxPlayers;
+
+  const canStart = !isStarted && activeCount >= 4 && (game.mode === 'rotating' || allPaired) && canManage;
+  const needsFixedPairing = !isStarted && game.mode === 'fixed' && activeCount >= 4 && !allPaired && canManage;
 
   const addPlayer = async () => {
     if (!newPlayerName.trim()) return;
@@ -121,21 +120,6 @@ export default function PlayersTab({
       onFetchData();
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Failed to remove player');
-    }
-  };
-
-  const toggleHere = async (playerId: string, currentIsHere: number) => {
-    try {
-      const res = await fetch(`/api/games/${code}/players/${playerId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_here: currentIsHere ? 0 : 1 }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      onFetchData();
-    } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : 'Failed to update check-in');
     }
   };
 
@@ -185,24 +169,6 @@ export default function PlayersTab({
     }
   };
 
-  const updateMaxPlayers = async () => {
-    const parsed = parseInt(newMaxPlayers) || 12;
-    const clamped = Math.max(4, Math.min(48, parsed));
-    try {
-      const res = await fetch(`/api/games/${code}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ max_players: clamped }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setEditingMaxPlayers(false);
-      onFetchData();
-    } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : 'Failed to update max players');
-    }
-  };
-
   const transferHost = async () => {
     if (!transferTarget) return;
     if (!confirm('Transfer host role? You will become a regular player.')) return;
@@ -249,8 +215,8 @@ export default function PlayersTab({
   };
 
   const getRoleBadge = (role: string) => {
-    if (role === 'host') return <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full leading-none">Host</span>;
-    if (role === 'cohost') return <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full leading-none">Co-host</span>;
+    if (role === 'host') return <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full leading-none shrink-0">Host</span>;
+    if (role === 'cohost') return <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full leading-none shrink-0">Co-host</span>;
     return null;
   };
 
@@ -259,22 +225,15 @@ export default function PlayersTab({
     const div = divisions.find((d) => d.id === divisionId);
     if (!div) return null;
     return (
-      <span
-        className="text-xs px-1.5 py-0.5 rounded-full text-white leading-none"
-        style={{ backgroundColor: div.color }}
-      >
+      <span className="text-xs px-1.5 py-0.5 rounded-full text-white leading-none shrink-0" style={{ backgroundColor: div.color }}>
         {div.name}
       </span>
     );
   };
 
-  // Determine if current user can remove a specific player
   const canRemovePlayer = (p: Player) => {
-    // Host can remove anyone except themselves (must transfer first)
     if (isCurrentHost) return p.role !== 'host';
-    // Co-host can remove regular players only
     if (canManage) return p.role === 'player';
-    // Regular players can only remove themselves (before start)
     return p.user_id === currentUserId;
   };
 
@@ -284,156 +243,121 @@ export default function PlayersTab({
     return (
       <div
         key={p.id}
-        className={`rounded-lg p-3 ${
-          isWaitlist
-            ? 'bg-amber-50 border border-amber-100'
-            : p.is_playing ? 'bg-primary-50' : 'bg-gray-50 opacity-60'
+        className={`flex items-center gap-2.5 py-2.5 ${
+          idx < (isWaitlist ? waitlistPlayers : rosterPlayers).length - 1
+            ? 'border-b border-gray-100'
+            : ''
         }`}
       >
-        {/* Row 1: Number + Name + Badges */}
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-sm text-gray-400 w-5 shrink-0 text-center">
-            {isWaitlist ? `#${p.waitlist_position}` : idx + 1}
-          </span>
-          <span className={`font-medium text-base ${
-            isWaitlist ? 'text-amber-800' : p.is_playing ? 'text-gray-900' : 'text-gray-400 line-through'
-          }`}>
-            {p.name}
-          </span>
-          {isSelf && (
-            <span className="text-xs bg-primary-100 text-primary-700 px-1.5 py-0.5 rounded-full leading-none shrink-0">You</span>
-          )}
-          {p.user_id && p.user_id !== currentUserId && !isWaitlist && (
-            <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full leading-none shrink-0">Claimed</span>
-          )}
-          {isWaitlist && (
-            <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full leading-none shrink-0">Waitlist</span>
-          )}
-          {getRoleBadge(p.role)}
+        {/* Position number */}
+        <span className="text-sm text-gray-400 w-5 shrink-0 text-center font-medium">
+          {isWaitlist ? `#${p.waitlist_position}` : idx + 1}
+        </span>
+
+        {/* Name + badges */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className={`font-medium text-sm ${
+              !p.is_playing && !isWaitlist ? 'line-through text-gray-400' : 'text-gray-900'
+            }`}>
+              {p.name}
+            </span>
+            {isSelf && (
+              <span className="text-xs text-primary-600 font-semibold shrink-0">(You)</span>
+            )}
+            {getRoleBadge(p.role)}
+            {getDivisionBadge(p.division_id)}
+            {p.user_id && p.user_id !== currentUserId && !isSelf && (
+              <span className="text-xs text-gray-400 shrink-0">claimed</span>
+            )}
+          </div>
         </div>
 
-        {/* Row 2: Status badges + Action buttons */}
-        <div className="flex items-center justify-between ml-7">
-          {/* Left: status badges */}
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {getDivisionBadge(p.division_id)}
-            {p.is_here ? (
-              <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full leading-none">Here</span>
-            ) : null}
-          </div>
-
-          {/* Right: action buttons */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {/* Check-in toggle (not for waitlisted players) */}
-            {!isWaitlist && (isSelf || canManage) && (
-              <button
-                onClick={() => toggleHere(p.id, p.is_here)}
-                className={`min-h-[36px] min-w-[36px] py-1.5 px-2.5 rounded-lg text-xs font-medium ${
-                  p.is_here
-                    ? 'bg-green-600 text-white'
-                    : 'bg-gray-200 text-gray-500'
-                }`}
-              >
-                {p.is_here ? 'Here' : 'Check in'}
-              </button>
-            )}
-            {/* Claim button */}
-            {!isWaitlist && !p.user_id && !claimedPlayerId && (
-              <button
-                onClick={() => onClaimPlayer(p.id)}
-                className="min-h-[36px] py-1.5 px-2.5 rounded-lg text-xs font-medium bg-blue-100 text-blue-700"
-              >
-                Claim Spot
-              </button>
-            )}
-            {/* Approve from waitlist (host/cohost only) */}
-            {isWaitlist && canManage && (
-              <button
-                onClick={() => approveWaitlistPlayer(p.id)}
-                className="min-h-[36px] py-1.5 px-2.5 rounded-lg text-xs font-medium bg-green-100 text-green-700"
-              >
-                Approve
-              </button>
-            )}
-            {/* Playing toggle + Remove (before start, host/cohost only) */}
-            {!isStarted && !isWaitlist && canManage && (
-              <>
-                <button
-                  onClick={() => togglePlaying(p.id, p.is_playing)}
-                  className={`min-h-[36px] py-1.5 px-3 rounded-lg text-xs font-medium ${
-                    p.is_playing
-                      ? 'bg-primary-600 text-white'
-                      : 'bg-gray-300 text-gray-600'
-                  }`}
-                >
-                  {p.is_playing ? 'Playing' : 'Out'}
-                </button>
-                {canRemovePlayer(p) && (
-                  <button
-                    onClick={() => removePlayer(p.id)}
-                    className="min-h-[36px] min-w-[36px] flex items-center justify-center text-red-400 text-sm"
-                  >
-                    ✕
-                  </button>
-                )}
-              </>
-            )}
-            {/* Remove from waitlist (host/cohost only) */}
-            {!isStarted && isWaitlist && canManage && canRemovePlayer(p) && (
-              <button
-                onClick={() => removePlayer(p.id)}
-                className="min-h-[36px] min-w-[36px] flex items-center justify-center text-red-400 text-sm"
-              >
-                ✕
-              </button>
-            )}
-            {/* Remove injured player post-start for host/cohost */}
-            {isStarted && !isWaitlist && canManage && p.is_playing === 1 && p.role !== 'host' && (
-              <button
-                onClick={() => {
-                  if (confirm(`Remove ${p.name}? (injured/leaving)`)) {
-                    togglePlaying(p.id, p.is_playing);
-                  }
-                }}
-                className="min-h-[36px] min-w-[36px] flex items-center justify-center text-red-400 text-sm"
-                title="Remove (injured)"
-              >
-                ✕
-              </button>
-            )}
-            {/* Co-host assignment (host only, for regular players) */}
-            {isCurrentHost && p.role === 'player' && p.user_id && !isWaitlist && (
-              <button
-                onClick={() => changeRole(p.id, 'cohost')}
-                className="min-h-[36px] py-1.5 px-2.5 rounded-lg text-xs font-medium bg-blue-50 text-blue-600"
-                title="Make Co-host"
-              >
-                +Co-host
-              </button>
-            )}
-            {/* Remove co-host (host only) */}
-            {isCurrentHost && p.role === 'cohost' && (
-              <button
-                onClick={() => {
-                  if (confirm(`Remove co-host role from ${p.name}?`)) {
-                    changeRole(p.id, 'player');
-                  }
-                }}
-                className="min-h-[36px] py-1.5 px-2.5 rounded-lg text-xs font-medium bg-gray-100 text-gray-600"
-                title="Remove Co-host"
-              >
-                -Co-host
-              </button>
-            )}
-          </div>
+        {/* Action buttons */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* Claim button */}
+          {!isWaitlist && !p.user_id && !claimedPlayerId && (
+            <button
+              onClick={() => onClaimPlayer(p.id)}
+              className="min-h-[40px] py-1.5 px-2.5 rounded-lg text-xs font-semibold bg-blue-100 text-blue-700 active:bg-blue-200"
+            >
+              Claim
+            </button>
+          )}
+          {/* Approve from waitlist */}
+          {isWaitlist && canManage && (
+            <button
+              onClick={() => approveWaitlistPlayer(p.id)}
+              className="min-h-[40px] py-1.5 px-2.5 rounded-lg text-xs font-semibold bg-green-100 text-green-700 active:bg-green-200"
+            >
+              Approve
+            </button>
+          )}
+          {/* Pre-start: playing toggle */}
+          {!isStarted && !isWaitlist && canManage && (
+            <button
+              onClick={() => togglePlaying(p.id, p.is_playing)}
+              className={`min-h-[40px] py-1.5 px-2.5 rounded-lg text-xs font-semibold ${
+                p.is_playing ? 'bg-primary-100 text-primary-700' : 'bg-gray-200 text-gray-500'
+              }`}
+            >
+              {p.is_playing ? 'In' : 'Out'}
+            </button>
+          )}
+          {/* Remove player */}
+          {!isStarted && canRemovePlayer(p) && (
+            <button
+              onClick={() => removePlayer(p.id)}
+              className="min-h-[40px] min-w-[40px] flex items-center justify-center text-red-400 active:text-red-600"
+            >
+              ✕
+            </button>
+          )}
+          {/* Remove injured post-start */}
+          {isStarted && !isWaitlist && canManage && p.is_playing === 1 && p.role !== 'host' && (
+            <button
+              onClick={() => {
+                if (confirm(`Remove ${p.name}? (injured/leaving)`)) {
+                  togglePlaying(p.id, p.is_playing);
+                }
+              }}
+              className="min-h-[40px] min-w-[40px] flex items-center justify-center text-red-400 active:text-red-600"
+            >
+              ✕
+            </button>
+          )}
         </div>
       </div>
     );
   };
 
+  // Co-hosts list (for Host Controls section)
+  const cohosts = players.filter((p) => p.role === 'cohost' && p.is_playing);
+  const promotablePlayers = players.filter((p) => p.role === 'player' && p.user_id && p.is_playing);
+
   return (
     <div className="space-y-4">
-      {/* Add player form - only show for host/cohost if not started */}
+      {/* ── START ROUND ROBIN ── prominent at top, sticky */}
+      {canStart && (
+        <div className="sticky top-[52px] z-10 bg-gray-50 pt-1 pb-1">
+          <button
+            onClick={onStartRoundRobin}
+            disabled={generatingSchedule}
+            className="w-full min-h-[56px] py-3 bg-primary-700 text-white text-lg font-bold rounded-2xl
+                       shadow-md active:bg-primary-800 disabled:opacity-50 transition-colors"
+          >
+            {generatingSchedule ? 'Starting...' : '▶  Start Round Robin'}
+          </button>
+        </div>
+      )}
+
+      {needsFixedPairing && (
+        <div className="card bg-amber-50 border border-amber-200 text-center py-3">
+          <p className="text-sm text-amber-700 font-medium">Pair all players into teams before starting</p>
+        </div>
+      )}
+
+      {/* Add player form */}
       {!isStarted && canManage && (
         <div className="card">
           <h3 className="font-semibold text-gray-700 mb-2">Add Player</h3>
@@ -450,14 +374,16 @@ export default function PlayersTab({
             <button
               onClick={addPlayer}
               disabled={addingPlayer || !newPlayerName.trim()}
-              className="py-3 px-5 bg-primary-600 text-white font-semibold rounded-xl
+              className="min-h-[48px] py-2 px-5 bg-primary-600 text-white font-semibold rounded-xl
                          active:bg-primary-700 disabled:opacity-50"
             >
               Add
             </button>
           </div>
-          <p className="text-xs text-gray-400 mt-1">
-            {isFull ? 'Game is full — new players will be added to the waitlist' : `${activeCount}/${maxPlayers} spots filled`}
+          <p className="text-xs text-gray-400 mt-1.5">
+            {isFull
+              ? `Full (${activeCount}/${maxPlayers}) — new players join waitlist`
+              : `${activeCount}/${maxPlayers} spots filled`}
           </p>
         </div>
       )}
@@ -465,83 +391,16 @@ export default function PlayersTab({
       {isStarted && (
         <div className="card text-center py-3">
           <p className="text-sm text-primary-700 font-medium">
-            Tournament in progress — player list is locked
+            Tournament in progress — player list locked
           </p>
         </div>
       )}
 
-      {/* Capacity indicator + Max players adjustment */}
-      {players.length > 0 && (
-        <div className={`card py-3 ${isFull ? 'bg-amber-50 border border-amber-200' : ''}`}>
-          <p className={`text-sm font-semibold text-center ${isFull ? 'text-amber-700' : 'text-gray-700'}`}>
-            {activeCount}/{maxPlayers} spots filled
-            {isFull && ' — FULL'}
-            {waitlistPlayers.length > 0 && (
-              <span className="text-amber-600"> — {waitlistPlayers.length} on waitlist</span>
-            )}
-          </p>
-          {canManage && !editingMaxPlayers && (
-            <button
-              onClick={() => { setNewMaxPlayers(String(maxPlayers)); setEditingMaxPlayers(true); }}
-              className="mt-2 w-full text-xs text-primary-600 font-medium"
-            >
-              Change max players ({maxPlayers})
-            </button>
-          )}
-          {canManage && editingMaxPlayers && (
-            <div className="mt-2 flex items-center gap-2 justify-center">
-              <label className="text-xs text-gray-600">Max (4–48):</label>
-              <input
-                type="number"
-                inputMode="numeric"
-                min={4}
-                max={48}
-                value={newMaxPlayers}
-                onChange={(e) => setNewMaxPlayers(e.target.value)}
-                onBlur={() => {
-                  const n = parseInt(newMaxPlayers);
-                  if (isNaN(n) || n < 4) setNewMaxPlayers('4');
-                  else if (n > 48) setNewMaxPlayers('48');
-                  else setNewMaxPlayers(String(n));
-                }}
-                className="w-16 text-center border rounded px-2 py-1 text-sm"
-                placeholder="12"
-              />
-              <button
-                onClick={updateMaxPlayers}
-                className="py-1 px-3 bg-primary-600 text-white text-xs rounded-lg font-medium"
-              >
-                Save
-              </button>
-              <button
-                onClick={() => setEditingMaxPlayers(false)}
-                className="py-1 px-3 bg-gray-200 text-gray-600 text-xs rounded-lg font-medium"
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Host management section */}
-      {isCurrentHost && (
-        <div className="card space-y-2">
-          <h3 className="font-semibold text-gray-700">Host Controls</h3>
-          <button
-            onClick={() => setShowHostTransfer(true)}
-            className="w-full py-2 bg-amber-100 text-amber-700 text-sm font-medium rounded-xl"
-          >
-            Transfer Host Role
-          </button>
-        </div>
-      )}
-
-      {/* Active player list */}
+      {/* Active players list */}
       {rosterPlayers.length > 0 && (
-        <div className="card space-y-2">
-          <h3 className="font-semibold text-gray-700 mb-2">
-            Active Players ({activeCount})
+        <div className="card">
+          <h3 className="font-semibold text-gray-700 mb-1">
+            Players <span className="text-gray-400 font-normal text-sm">({activeCount}/{maxPlayers})</span>
           </h3>
           {rosterPlayers.map((p, i) => renderPlayerRow(p, i, false))}
         </div>
@@ -549,122 +408,84 @@ export default function PlayersTab({
 
       {/* Waitlist */}
       {waitlistPlayers.length > 0 && (
-        <div className="card space-y-2 border border-amber-200">
-          <div className="flex items-center justify-between">
+        <div className="card border border-amber-200 bg-amber-50">
+          <div className="flex items-center justify-between mb-1">
             <h3 className="font-semibold text-amber-700">
               Waitlist ({waitlistPlayers.length})
             </h3>
             {canManage && waitlistPlayers.length > 1 && (
               <button
                 onClick={approveAllWaitlist}
-                className="py-1.5 px-3 bg-green-600 text-white text-xs font-medium rounded-lg"
+                className="py-1.5 px-3 bg-green-600 text-white text-xs font-semibold rounded-lg"
               >
                 Approve All
               </button>
             )}
           </div>
-          <p className="text-xs text-gray-500 -mt-1 mb-1">
+          <p className="text-xs text-gray-500 mb-2">
             {canManage
-              ? 'Approve players to add them to the active roster'
-              : 'Players will be automatically promoted when spots open up'}
+              ? 'Approve players to add them to the roster'
+              : 'Players promoted automatically when spots open'}
           </p>
           {waitlistPlayers.map((p, i) => renderPlayerRow(p, i, true))}
         </div>
       )}
 
-      {/* Team Pairing - Fixed mode only, before start, host/cohost only */}
+      {/* Team Pairing — Fixed mode only */}
       {!isStarted && game.mode === 'fixed' && activePlayers.length >= 4 && canManage && (
         <div className="card space-y-3">
           <h3 className="font-semibold text-gray-700">Pair Teams</h3>
-
           {teams.length > 0 && (
             <div className="space-y-2">
               {teams.map((t, i) => (
-                <div key={t.id} className="flex items-center justify-between bg-primary-50 rounded-lg p-2">
+                <div key={t.id} className="flex items-center justify-between bg-primary-50 rounded-xl px-3 py-2">
                   <span className="text-sm font-medium">
                     Team {i + 1}: {t.player1_name} & {t.player2_name}
                   </span>
-                  <button
-                    onClick={() => removeTeam(t.id)}
-                    className="min-h-[36px] min-w-[36px] flex items-center justify-center text-red-400 text-xs"
-                  >
+                  <button onClick={() => removeTeam(t.id)} className="min-h-[40px] min-w-[40px] flex items-center justify-center text-red-400 text-xs">
                     ✕
                   </button>
                 </div>
               ))}
             </div>
           )}
-
           {unpairedPlayers.length >= 2 && (
             <div className="space-y-2">
               <div className="flex gap-2">
-                <select
-                  className="input-field flex-1"
-                  value={teamPlayer1}
-                  onChange={(e) => setTeamPlayer1(e.target.value)}
-                >
+                <select className="input-field flex-1" value={teamPlayer1} onChange={(e) => setTeamPlayer1(e.target.value)}>
                   <option value="">Player 1...</option>
-                  {unpairedPlayers
-                    .filter((p) => p.id !== teamPlayer2)
-                    .map((p) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
+                  {unpairedPlayers.filter((p) => p.id !== teamPlayer2).map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
                 </select>
-                <select
-                  className="input-field flex-1"
-                  value={teamPlayer2}
-                  onChange={(e) => setTeamPlayer2(e.target.value)}
-                >
+                <select className="input-field flex-1" value={teamPlayer2} onChange={(e) => setTeamPlayer2(e.target.value)}>
                   <option value="">Player 2...</option>
-                  {unpairedPlayers
-                    .filter((p) => p.id !== teamPlayer1)
-                    .map((p) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
+                  {unpairedPlayers.filter((p) => p.id !== teamPlayer1).map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
                 </select>
               </div>
-              <button
-                onClick={createTeam}
-                disabled={!teamPlayer1 || !teamPlayer2}
-                className="btn-secondary"
-              >
+              <button onClick={createTeam} disabled={!teamPlayer1 || !teamPlayer2} className="btn-secondary">
                 Pair Team
               </button>
             </div>
           )}
-
           {unpairedPlayers.length === 1 && (
-            <p className="text-sm text-amber-600">
-              1 player remaining unpaired. Need an even number of active players.
-            </p>
+            <p className="text-sm text-amber-600">1 player unpaired — need an even number.</p>
           )}
-
           {unpairedPlayers.length === 0 && teams.length > 0 && (
-            <p className="text-sm text-primary-600 font-medium">
-              All players are paired! Ready to start.
-            </p>
+            <p className="text-sm text-primary-600 font-medium">All players paired! Ready to start.</p>
           )}
         </div>
       )}
 
-      {/* Start Round Robin button - host/cohost only */}
-      {!isStarted && activePlayers.length >= 4 && (game.mode === 'rotating' || allPaired) && canManage && (
-        <button
-          onClick={onStartRoundRobin}
-          disabled={generatingSchedule}
-          className="btn-primary text-lg"
-        >
-          {generatingSchedule ? 'Starting...' : 'START ROUND ROBIN'}
-        </button>
-      )}
-
-      {!isStarted && game.mode === 'fixed' && activePlayers.length >= 4 && !allPaired && canManage && (
-        <p className="text-center text-sm text-gray-500">
-          Pair all players into teams before starting
+      {!isStarted && activeCount > 0 && activeCount < 4 && (
+        <p className="text-center text-sm text-gray-500 py-2">
+          Need at least 4 active players to start
         </p>
       )}
 
-      {/* Regenerate schedule — host/cohost only */}
+      {/* Regenerate schedule */}
       {isStarted && !!game.schedule_generated && canManage && (
         <button
           onClick={onGenerateSchedule}
@@ -675,10 +496,54 @@ export default function PlayersTab({
         </button>
       )}
 
-      {!isStarted && activePlayers.length > 0 && activePlayers.length < 4 && (
-        <p className="text-center text-sm text-gray-500">
-          Need at least 4 active players to start
-        </p>
+      {/* Host Controls (at bottom) */}
+      {isCurrentHost && (
+        <div className="card space-y-3">
+          <h3 className="font-semibold text-gray-700">Host Controls</h3>
+
+          {/* Current co-hosts */}
+          {cohosts.length > 0 && (
+            <div className="space-y-1.5">
+              {cohosts.map((p) => (
+                <div key={p.id} className="flex items-center justify-between bg-blue-50 rounded-xl px-3 py-2">
+                  <div>
+                    <span className="text-sm font-medium text-blue-800">{p.name}</span>
+                    <span className="text-xs text-blue-600 ml-1.5">Co-host</span>
+                  </div>
+                  <button
+                    onClick={() => { if (confirm(`Remove co-host role from ${p.name}?`)) changeRole(p.id, 'player'); }}
+                    className="text-xs text-red-500 font-medium py-1 px-2"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add co-host */}
+          {promotablePlayers.length > 0 && (
+            <select
+              className="input-field text-sm"
+              value=""
+              onChange={(e) => {
+                if (e.target.value) changeRole(e.target.value, 'cohost');
+              }}
+            >
+              <option value="">+ Add Co-host...</option>
+              {promotablePlayers.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          )}
+
+          <button
+            onClick={() => setShowHostTransfer(true)}
+            className="w-full py-2.5 bg-amber-100 text-amber-700 text-sm font-semibold rounded-xl active:bg-amber-200"
+          >
+            Transfer Host Role
+          </button>
+        </div>
       )}
 
       {/* Host Transfer Modal */}
@@ -707,13 +572,13 @@ export default function PlayersTab({
               <button
                 onClick={transferHost}
                 disabled={!transferTarget}
-                className="flex-1 py-2.5 bg-amber-600 text-white font-semibold rounded-xl disabled:opacity-50"
+                className="flex-1 min-h-[48px] py-2.5 bg-amber-600 text-white font-semibold rounded-xl disabled:opacity-50"
               >
                 Transfer
               </button>
               <button
                 onClick={() => { setShowHostTransfer(false); setTransferTarget(''); }}
-                className="flex-1 py-2.5 bg-gray-200 text-gray-700 font-semibold rounded-xl"
+                className="flex-1 min-h-[48px] py-2.5 bg-gray-200 text-gray-700 font-semibold rounded-xl"
               >
                 Cancel
               </button>

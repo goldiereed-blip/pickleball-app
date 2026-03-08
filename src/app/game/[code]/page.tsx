@@ -445,53 +445,67 @@ export default function GamePage() {
         activePlayers={activePlayers}
         completedMatches={completedMatches}
         totalMatches={totalMatches}
-        isHost={currentPlayer?.role === 'host'}
         onShare={() => setShowShare(true)}
-        onDelete={() => setShowDeleteConfirm(true)}
       />
 
-      {/* Game management buttons for host/cohost */}
-      {isStarted && game && !game.is_complete && isHostOrCohost && (
+      {/* Management actions — host/cohost only */}
+      {isHostOrCohost && !game?.is_complete && (
         <div className="max-w-lg mx-auto px-4 mt-2 space-y-2">
-          <div className="flex gap-2">
-            <button onClick={completeGame} className="flex-1 py-2 bg-green-600 text-white text-sm font-semibold rounded-xl">
-              Complete Game
-            </button>
-          </div>
-          {completedMatches === 0 && (
-            <button
-              onClick={() => setShowReopenConfirm(true)}
-              disabled={reopening}
-              className="w-full py-2 bg-amber-500 text-white text-sm font-semibold rounded-xl active:bg-amber-600"
-            >
-              {reopening ? 'Reopening...' : 'Reopen for Players'}
-            </button>
+          {isStarted && (
+            <>
+              <button
+                onClick={completeGame}
+                className="w-full py-2.5 bg-green-600 text-white text-sm font-semibold rounded-xl active:bg-green-700"
+              >
+                Complete Game
+              </button>
+              {completedMatches === 0 ? (
+                <button
+                  onClick={() => setShowReopenConfirm(true)}
+                  disabled={reopening}
+                  className="w-full py-2 bg-amber-500 text-white text-sm font-semibold rounded-xl active:bg-amber-600 disabled:opacity-50"
+                >
+                  {reopening ? 'Reopening...' : 'Reopen for Players'}
+                </button>
+              ) : (
+                <p className="text-xs text-gray-400 text-center">
+                  Cannot reopen — {completedMatches} game{completedMatches !== 1 ? 's' : ''} already played
+                </p>
+              )}
+            </>
           )}
-          {completedMatches > 0 && (
-            <p className="text-xs text-gray-400 text-center">
-              Game cannot be reopened — {completedMatches} game{completedMatches !== 1 ? 's' : ''} already played
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* Edit Game Settings — host/cohost only, any time before completion */}
-      {canEditSettings && (
-        <div className="max-w-lg mx-auto px-4 mt-2">
           <button
             onClick={openEditSettings}
             className="w-full py-2 bg-primary-50 text-primary-700 text-sm font-semibold rounded-xl border border-primary-200 active:bg-primary-100"
           >
             Edit Game Settings
           </button>
+          {currentPlayer?.role === 'host' && (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="w-full py-2 text-red-500 text-sm font-medium rounded-xl border border-red-200 bg-red-50 active:bg-red-100"
+            >
+              Delete Game
+            </button>
+          )}
         </div>
       )}
 
-      {!!game?.is_complete && rankings.length > 0 && (
-        <div className="max-w-lg mx-auto px-4 mt-2">
-          <button onClick={shareResults} className="w-full py-2 bg-primary-600 text-white text-sm font-semibold rounded-xl">
-            Share Results
-          </button>
+      {!!game?.is_complete && (
+        <div className="max-w-lg mx-auto px-4 mt-2 space-y-2">
+          {rankings.length > 0 && (
+            <button onClick={shareResults} className="w-full py-2.5 bg-primary-600 text-white text-sm font-semibold rounded-xl">
+              Share Results
+            </button>
+          )}
+          {currentPlayer?.role === 'host' && (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="w-full py-2 text-red-500 text-sm font-medium rounded-xl border border-red-200 bg-red-50 active:bg-red-100"
+            >
+              Delete Game
+            </button>
+          )}
         </div>
       )}
 

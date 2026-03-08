@@ -10,40 +10,44 @@ interface RankingsTabProps {
   code: string;
 }
 
-export default function RankingsTab({ rankings, completedMatches, divisions, code }: RankingsTabProps) {
+const medals = ['🏆', '🥈', '🥉'];
+const medalBg = [
+  'bg-yellow-50 border-yellow-200',
+  'bg-gray-100 border-gray-200',
+  'bg-orange-50 border-orange-200',
+];
+
+export default function RankingsTab({ rankings, completedMatches, divisions }: RankingsTabProps) {
   const [scope, setScope] = useState<'division' | 'overall'>('overall');
   const [selectedDivisionId, setSelectedDivisionId] = useState<string>('');
 
   const hasDivisions = divisions.length > 0;
 
-  // Filter rankings by division if applicable
   const filteredRankings = hasDivisions && scope === 'division' && selectedDivisionId
     ? rankings.filter((r) => r.division_id === selectedDivisionId)
     : rankings;
 
   if (rankings.length === 0 || completedMatches === 0) {
     return (
-      <div className="space-y-4">
-        <div className="card text-center py-8">
-          <p className="text-gray-500">
-            {rankings.length === 0
-              ? 'No players yet'
-              : 'No scores entered yet. Enter scores to see rankings.'}
-          </p>
-        </div>
+      <div className="card text-center py-8">
+        <p className="text-gray-500">
+          {rankings.length === 0
+            ? 'No players yet'
+            : 'No scores entered yet — enter scores to see rankings.'}
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Division/Overall toggle */}
       {hasDivisions && (
         <div className="card space-y-2">
           <div className="flex gap-2">
             <button
               onClick={() => setScope('overall')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium ${
+              className={`flex-1 py-2 rounded-xl text-sm font-semibold ${
                 scope === 'overall' ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600'
               }`}
             >
@@ -51,7 +55,7 @@ export default function RankingsTab({ rankings, completedMatches, divisions, cod
             </button>
             <button
               onClick={() => setScope('division')}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium ${
+              className={`flex-1 py-2 rounded-xl text-sm font-semibold ${
                 scope === 'division' ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600'
               }`}
             >
@@ -73,70 +77,48 @@ export default function RankingsTab({ rankings, completedMatches, divisions, cod
         </div>
       )}
 
-      <div className="card overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-gray-500 text-xs border-b">
-              <th className="text-left py-2 pr-2">#</th>
-              <th className="text-left py-2">Player</th>
-              {hasDivisions && scope === 'overall' && (
-                <th className="text-left py-2 px-1">Div</th>
-              )}
-              <th className="text-center py-2 px-1">W</th>
-              <th className="text-center py-2 px-1">L</th>
-              <th className="text-center py-2 px-1">+/-</th>
-              <th className="text-center py-2 px-1">GP</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredRankings.map((r, i) => (
-              <tr
-                key={r.player_id}
-                className={`border-b last:border-0 ${
-                  i === 0 && r.wins > 0 ? 'bg-yellow-50' : ''
+      {/* Rankings cards */}
+      <div className="space-y-2">
+        {filteredRankings.map((r, i) => (
+          <div
+            key={r.player_id}
+            className={`rounded-2xl border px-4 py-3 ${
+              i < 3 ? medalBg[i] : 'bg-white border-gray-100'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              {/* Rank / Medal */}
+              <div className="w-8 shrink-0 text-center">
+                {i < 3 ? (
+                  <span className="text-2xl leading-none">{medals[i]}</span>
+                ) : (
+                  <span className="text-base font-bold text-gray-400">{i + 1}.</span>
+                )}
+              </div>
+
+              {/* Name + stats */}
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-base truncate text-gray-900">{r.player_name}</p>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  {r.wins} Win{r.wins !== 1 ? 's' : ''} &middot; {r.losses} Loss{r.losses !== 1 ? 'es' : ''} &middot; {r.games_played} played
+                </p>
+              </div>
+
+              {/* Point differential */}
+              <div
+                className={`text-xl font-bold tabular-nums shrink-0 ${
+                  r.point_differential > 0
+                    ? 'text-green-600'
+                    : r.point_differential < 0
+                    ? 'text-red-500'
+                    : 'text-gray-400'
                 }`}
               >
-                <td className="py-2 pr-2 font-bold text-gray-400">
-                  {i + 1}
-                </td>
-                <td className="py-2 font-medium">
-                  {r.player_name}
-                  {i === 0 && r.wins > 0 && scope === 'overall' && ' \ud83c\udfc6'}
-                  {i === 0 && r.wins > 0 && scope === 'division' && ' \ud83c\udfc5'}
-                </td>
-                {hasDivisions && scope === 'overall' && (
-                  <td className="py-2 px-1 text-xs">
-                    {r.division_name || '-'}
-                  </td>
-                )}
-                <td className="text-center py-2 px-1 text-primary-600 font-semibold">
-                  {r.wins}
-                </td>
-                <td className="text-center py-2 px-1 text-red-500">
-                  {r.losses}
-                </td>
-                <td
-                  className={`text-center py-2 px-1 font-medium ${
-                    r.point_differential > 0
-                      ? 'text-primary-600'
-                      : r.point_differential < 0
-                      ? 'text-red-500'
-                      : 'text-gray-500'
-                  }`}
-                >
-                  {r.point_differential > 0 ? '+' : ''}
-                  {r.point_differential}
-                </td>
-                <td className="text-center py-2 px-1 text-gray-400">
-                  {r.games_played}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <div className="text-xs text-gray-400 mt-2 pt-2 border-t">
-          W=Wins, L=Losses, +/-=Point Differential, GP=Games Played
-        </div>
+                {r.point_differential > 0 ? '+' : ''}{r.point_differential}
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
