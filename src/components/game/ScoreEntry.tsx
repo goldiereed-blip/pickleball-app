@@ -109,7 +109,7 @@ export default function ScoreEntry({
             </button>
           </div>
         </div>
-      ) : match.is_completed ? (
+      ) : match.is_completed && match.team1_score !== null && match.team2_score !== null ? (
         /* Completed: winner/loser display */
         <div className="rounded-xl overflow-hidden border border-gray-100">
           {/* Winner row */}

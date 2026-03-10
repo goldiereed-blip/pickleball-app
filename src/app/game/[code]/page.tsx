@@ -214,10 +214,16 @@ export default function GamePage() {
       const totalMatchups = (numTeams * (numTeams - 1)) / 2;
       suggested = Math.ceil(totalMatchups / maxCourts);
     } else {
-      const totalPairs = (n * (n - 1)) / 2;
-      const partnershipsPerRound = maxCourts * 2;
-      const minRounds = Math.ceil(totalPairs / partnershipsPerRound);
-      suggested = minRounds + Math.ceil(minRounds * 0.3);
+      const courtCapacity = (game?.num_courts || 1) * 4;
+      const activePlayersPerRound = maxCourts * 4;
+      if (n <= courtCapacity) {
+        // Enough court capacity for everyone — N-1 rounds covers all opponents twice
+        suggested = n - 1;
+      } else {
+        // With byes: each player needs (n-1) games, but only plays activePlayersPerRound/n of rounds
+        // rounds = n*(n-1) / activePlayersPerRound
+        suggested = Math.ceil((n * (n - 1)) / activePlayersPerRound);
+      }
     }
     setSuggestedRounds(suggested);
     setSelectedRounds(suggested);
@@ -443,16 +449,20 @@ export default function GamePage() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-4">
-      {game?.group_code && (
-        <div className="max-w-lg mx-auto px-4 pt-3">
+      <div className="max-w-lg mx-auto px-4 pt-3">
+        {game?.group_code ? (
           <button
             onClick={() => router.push(`/group/${game.group_code}`)}
             className="flex items-center gap-1 text-sm text-primary-700 font-medium"
           >
             &larr; Back to {game.group_name || 'Group'}
           </button>
-        </div>
-      )}
+        ) : (
+          <a href="/" className="flex items-center gap-1 text-sm text-primary-700 font-medium">
+            &larr; Home
+          </a>
+        )}
+      </div>
 
       <GameHeader
         game={game!}

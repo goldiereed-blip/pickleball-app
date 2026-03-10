@@ -21,6 +21,13 @@ export function RoundConfirmModal({
   onConfirm,
   onClose,
 }: RoundConfirmModalProps) {
+  const n = activePlayers.length;
+  const maxCourts = Math.min(game.num_courts, Math.floor(n / 4));
+  const activePlayersPerRound = maxCourts * 4;
+  const hasByes = n > game.num_courts * 4;
+  const byesPerRound = hasByes ? n - activePlayersPerRound : 0;
+  const approxGamesPerPlayer = Math.round((selectedRounds * activePlayersPerRound) / n);
+
   return (
     <div
       className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
@@ -31,10 +38,12 @@ export function RoundConfirmModal({
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-xl font-bold text-center">Confirm Rounds</h2>
+
+        {/* Round picker */}
         <div className="text-center">
           <p className="text-sm text-gray-500 mb-3">
-            Based on {activePlayers.length} players and {game.num_courts} court{game.num_courts !== 1 ? 's' : ''},
-            we suggest <span className="font-bold text-primary-700">{suggestedRounds}</span> rounds.
+            Recommended: <span className="font-bold text-primary-700">{suggestedRounds}</span> rounds
+            &nbsp;&mdash; each player faces everyone twice
           </p>
           <label className="block text-sm font-medium text-gray-600 mb-2">
             Number of Rounds
@@ -57,6 +66,31 @@ export function RoundConfirmModal({
             </button>
           </div>
         </div>
+
+        {/* Breakdown */}
+        <div className="bg-gray-50 rounded-xl p-3 space-y-1.5">
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-500">Players active per round</span>
+            <span className="font-medium">{activePlayersPerRound} of {n}</span>
+          </div>
+          {hasByes && (
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">Sitting out per round</span>
+              <span className="font-medium">{byesPerRound}</span>
+            </div>
+          )}
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-500">Est. games per player</span>
+            <span className="font-medium">~{approxGamesPerPlayer}</span>
+          </div>
+        </div>
+
+        {hasByes && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-2.5 text-center">
+            With {byesPerRound} player{byesPerRound !== 1 ? 's' : ''} sitting out each round, perfect distribution is hard to guarantee. This recommendation gets everyone close to facing each opponent twice.
+          </p>
+        )}
+
         <p className="text-xs text-gray-400 text-center">
           This will lock the player list and start the tournament
         </p>

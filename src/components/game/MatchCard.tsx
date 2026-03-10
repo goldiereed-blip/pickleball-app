@@ -32,11 +32,11 @@ export default function MatchCard({ match, divisionColor }: MatchCardProps) {
             {match.team1_player1_name} & {match.team1_player2_name}
           </p>
         </div>
-        {match.is_completed ? (
+        {match.is_completed && match.team1_score !== null && match.team2_score !== null ? (
           <div className="flex items-center gap-1 mx-2">
             <span
               className={`font-bold text-lg ${
-                (match.team1_score ?? 0) > (match.team2_score ?? 0)
+                match.team1_score > match.team2_score
                   ? 'text-primary-600'
                   : 'text-gray-400'
               }`}
@@ -46,7 +46,7 @@ export default function MatchCard({ match, divisionColor }: MatchCardProps) {
             <span className="text-gray-300">-</span>
             <span
               className={`font-bold text-lg ${
-                (match.team2_score ?? 0) > (match.team1_score ?? 0)
+                match.team2_score > match.team1_score
                   ? 'text-primary-600'
                   : 'text-gray-400'
               }`}

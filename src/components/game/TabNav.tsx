@@ -14,7 +14,7 @@ const tabLabels: Record<Tab, string> = {
   schedule: 'Schedule',
   scores: 'Scores',
   rankings: 'Rankings',
-  'my-games': 'My Games',
+  'my-games': 'My Matches',
 };
 
 export default function TabNav({ tabs, activeTab, onTabChange }: TabNavProps) {

@@ -427,13 +427,17 @@ export function estimateRounds(
   const maxCourts = Math.min(numCourts, Math.floor(numPlayers / 4));
 
   if (mode === 'rotating') {
-    const totalPairs = (numPlayers * (numPlayers - 1)) / 2;
-    const partnershipsPerRound = maxCourts * 2;
-    const minRounds = Math.ceil(totalPairs / partnershipsPerRound);
-    const suggested = minRounds + Math.ceil(minRounds * 0.3);
+    const courtCapacity = numCourts * 4;
+    const activePlayersPerRound = maxCourts * 4;
+    let suggested: number;
+    if (numPlayers <= courtCapacity) {
+      suggested = numPlayers - 1;
+    } else {
+      suggested = Math.ceil((numPlayers * (numPlayers - 1)) / activePlayersPerRound);
+    }
     return {
       rounds: suggested,
-      description: `~${minRounds}–${suggested} rounds so every player partners with every other player at least once`,
+      description: `${suggested} rounds so every player faces each opponent twice`,
     };
   } else {
     const numTeams = Math.floor(numPlayers / 2);

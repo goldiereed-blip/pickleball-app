@@ -76,9 +76,11 @@ export async function POST(
     // Prevent duplicate spots — but only when a player is joining for themselves
     // Hosts/co-hosts adding players on behalf of others should not be blocked
     const user = await getSession();
+    let isManager = false;
     if (user) {
       const callerRole = await getCallerRole(gameId);
-      if (!canManage(callerRole)) {
+      isManager = canManage(callerRole);
+      if (!isManager) {
         const existingPlayer = await db.execute({
           sql: 'SELECT id FROM players WHERE game_id = ? AND user_id = ?',
           args: [gameId, user.id],
@@ -126,8 +128,9 @@ export async function POST(
     }
 
     await db.execute({
+      // Managers adding players on behalf of others: don't link to their account
       sql: 'INSERT INTO players (id, game_id, name, is_playing, order_num, role, waitlist_position, user_id, claimed_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      args: [id, gameId, name.trim(), isPlaying, currentTotal, role, waitlistPosition, user?.id || null, user?.id || null],
+      args: [id, gameId, name.trim(), isPlaying, currentTotal, role, waitlistPosition, isManager ? null : (user?.id || null), isManager ? null : (user?.id || null)],
     });
 
     return NextResponse.json({
