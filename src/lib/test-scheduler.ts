@@ -11,7 +11,7 @@
  *   ✓ No consecutive matchup repeats (same 4-person group back-to-back)
  */
 
-import { generateRotatingSchedule, generateFixedSchedule, estimateRounds } from './scheduler';
+import { generateRotatingSchedule, generateFixedSchedule, estimateRounds, validateRotatingSchedule, validateFixedPartnersSchedule } from './scheduler';
 import type { ScheduleRound } from './types';
 
 // ─── Shared helpers ────────────────────────────────────────────────────────────
@@ -366,6 +366,34 @@ const rotatingTests: [number, number][] = [
 
 for (const [players, courts] of rotatingTests) {
   if (!testRotating(players, courts)) allPass = false;
+}
+
+console.log('\n── Rotating with explicit numRounds (validates retry loop) ──');
+
+function testRotatingWithRounds(numPlayers: number, numCourts: number, numRounds: number): boolean {
+  const players = Array.from({ length: numPlayers }, (_, i) => `P${i + 1}`);
+  const schedule = generateRotatingSchedule(players, numCourts, numRounds);
+  const { isValid, violations } = validateRotatingSchedule(schedule, players);
+  const correctLength = schedule.length === numRounds;
+  const pass = isValid && correctLength;
+  const label = pass ? 'PASS' : 'FAIL';
+  console.log(`[${label}] ${numPlayers}p/${numCourts}c/${numRounds}r => ${schedule.length} rounds, valid=${isValid}`);
+  if (!correctLength) console.log(`  ✗ Expected ${numRounds} rounds, got ${schedule.length}`);
+  if (!isValid) for (const v of violations) console.log(`  ✗ ${v}`);
+  return pass;
+}
+
+const roundsTests: [number, number, number][] = [
+  [8, 2, 7],
+  [8, 2, 5],
+  [10, 2, 9],
+  [10, 2, 12],
+  [12, 3, 11],
+  [6, 1, 8],
+];
+
+for (const [players, courts, rounds] of roundsTests) {
+  if (!testRotatingWithRounds(players, courts, rounds)) allPass = false;
 }
 
 console.log('\n── Fixed Partners (full round-robin coverage) ──');

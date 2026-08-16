@@ -189,26 +189,15 @@ export async function POST(
             .filter((t) => divPlayerIdSet.has(t.player1_id as string) && divPlayerIdSet.has(t.player2_id as string))
             .map((t) => [t.player1_id as string, t.player2_id as string]);
           schedule = generateFixedSchedule(divPlayerIds, divNumCourts, teamPairings.length > 0 ? teamPairings : undefined);
-        } else {
-          schedule = generateRotatingSchedule(divPlayerIds, divNumCourts);
-        }
-
-        // Adjust rounds
-        if (numRoundsLimit) {
-          if (schedule.length > numRoundsLimit) {
+          // Slice to requested round count if needed (circle method produces a fixed count)
+          if (numRoundsLimit && schedule.length > numRoundsLimit) {
             schedule = schedule.slice(0, numRoundsLimit);
-          } else if (schedule.length < numRoundsLimit) {
-            const baseSchedule = [...schedule];
-            while (schedule.length < numRoundsLimit) {
-              const sourceRound = baseSchedule[schedule.length % baseSchedule.length];
-              schedule.push({
-                roundNumber: schedule.length + 1,
-                matches: sourceRound.matches.map((m) => ({ ...m })),
-                sitting: [...sourceRound.sitting],
-              });
-            }
+            schedule.forEach((r, i) => { r.roundNumber = i + 1; });
           }
-          schedule.forEach((r, i) => { r.roundNumber = i + 1; });
+        } else {
+          // Pass numRoundsLimit directly so the generator produces exactly that many rounds
+          // with full retry validation — no post-generation slicing or padding needed.
+          schedule = generateRotatingSchedule(divPlayerIds, divNumCourts, numRoundsLimit ?? undefined);
         }
 
         // Save to database — remap court numbers to division's court range
@@ -251,25 +240,15 @@ export async function POST(
           t.player1_id as string, t.player2_id as string,
         ]);
         schedule = generateFixedSchedule(playerIds, game.num_courts, teamPairings.length > 0 ? teamPairings : undefined);
-      } else {
-        schedule = generateRotatingSchedule(playerIds, game.num_courts);
-      }
-
-      if (numRoundsLimit) {
-        if (schedule.length > numRoundsLimit) {
+        // Slice to requested round count if needed
+        if (numRoundsLimit && schedule.length > numRoundsLimit) {
           schedule = schedule.slice(0, numRoundsLimit);
-        } else if (schedule.length < numRoundsLimit) {
-          const baseSchedule = [...schedule];
-          while (schedule.length < numRoundsLimit) {
-            const sourceRound = baseSchedule[schedule.length % baseSchedule.length];
-            schedule.push({
-              roundNumber: schedule.length + 1,
-              matches: sourceRound.matches.map((m) => ({ ...m })),
-              sitting: [...sourceRound.sitting],
-            });
-          }
+          schedule.forEach((r, i) => { r.roundNumber = i + 1; });
         }
-        schedule.forEach((r, i) => { r.roundNumber = i + 1; });
+      } else {
+        // Pass numRoundsLimit directly so the generator produces exactly that many rounds
+        // with full retry validation — no post-generation slicing or padding needed.
+        schedule = generateRotatingSchedule(playerIds, game.num_courts, numRoundsLimit ?? undefined);
       }
 
       for (const round of schedule) {
