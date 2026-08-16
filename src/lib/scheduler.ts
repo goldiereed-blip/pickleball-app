@@ -68,7 +68,7 @@ export function validateRotatingSchedule(
     }
 
     // Check 3: Bye distribution fairness (no player 2+ byes ahead of another)
-    const byeVals = [...byeCount.values()];
+    const byeVals = Array.from(byeCount.values());
     const minBye = Math.min(...byeVals);
     const maxBye = Math.max(...byeVals);
     if (maxBye - minBye >= 2) {
@@ -107,7 +107,7 @@ export function validateRotatingSchedule(
   }
 
   // Check 6: Balanced game counts (max difference ≤ 1)
-  const gamesArr = [...gamesPlayed.values()];
+  const gamesArr = Array.from(gamesPlayed.values());
   if (gamesArr.length > 0) {
     const minG = Math.min(...gamesArr);
     const maxG = Math.max(...gamesArr);
@@ -172,7 +172,7 @@ export function validateFixedPartnersSchedule(
       }
     }
 
-    const byeVals = [...byeCount.values()];
+    const byeVals = Array.from(byeCount.values());
     if (byeVals.length > 0) {
       const minBye = Math.min(...byeVals);
       const maxBye = Math.max(...byeVals);
@@ -183,7 +183,7 @@ export function validateFixedPartnersSchedule(
   }
 
   // Check 4: Balanced team game counts
-  const gamesArr = [...gamesPlayed.values()];
+  const gamesArr = Array.from(gamesPlayed.values());
   if (gamesArr.length > 0) {
     const minG = Math.min(...gamesArr);
     const maxG = Math.max(...gamesArr);
