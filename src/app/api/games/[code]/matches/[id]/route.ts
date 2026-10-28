@@ -29,7 +29,7 @@ export async function PATCH(
 
     return NextResponse.json({ success: true });
   } catch (e: unknown) {
-    console.error('PATCH /api/games/[code]/matches/[id] error:', e);
+    console.error(`PATCH /api/games/${params.code}/matches/${params.id} error:`, e instanceof Error ? e.message : e);
     return NextResponse.json(
       { error: e instanceof Error ? e.message : 'Internal server error' },
       { status: 500 }

@@ -31,19 +31,20 @@ export default function ScoreEntry({
 
   const startEditing = () => {
     setEditingMatch(match.id);
-    setScoreT1(match.is_completed ? String(match.team1_score) : '');
-    setScoreT2(match.is_completed ? String(match.team2_score) : '');
+    setScoreT1(match.is_completed && match.team1_score !== null ? String(match.team1_score) : '');
+    setScoreT2(match.is_completed && match.team2_score !== null ? String(match.team2_score) : '');
   };
 
   const team1Wins = (match.team1_score ?? 0) > (match.team2_score ?? 0);
   const diff = Math.abs((match.team1_score ?? 0) - (match.team2_score ?? 0));
 
-  const winnerNames = team1Wins
-    ? `${match.team1_player1_name} & ${match.team1_player2_name}`
-    : `${match.team2_player1_name} & ${match.team2_player2_name}`;
-  const loserNames = team1Wins
-    ? `${match.team2_player1_name} & ${match.team2_player2_name}`
-    : `${match.team1_player1_name} & ${match.team1_player2_name}`;
+  const t1p1 = match.team1_player1_name || '?';
+  const t1p2 = match.team1_player2_name || '?';
+  const t2p1 = match.team2_player1_name || '?';
+  const t2p2 = match.team2_player2_name || '?';
+
+  const winnerNames = team1Wins ? `${t1p1} & ${t1p2}` : `${t2p1} & ${t2p2}`;
+  const loserNames = team1Wins ? `${t2p1} & ${t2p2}` : `${t1p1} & ${t1p2}`;
   const winnerScore = team1Wins ? match.team1_score : match.team2_score;
   const loserScore = team1Wins ? match.team2_score : match.team1_score;
 
@@ -67,9 +68,9 @@ export default function ScoreEntry({
         /* Edit mode: show team names side-by-side with inputs */
         <div className="space-y-2">
           <div className="grid grid-cols-[1fr,auto,1fr] items-center gap-2 text-center text-xs text-gray-500 mb-1">
-            <span className="truncate">{match.team1_player1_name} &amp; {match.team1_player2_name}</span>
+            <span className="truncate">{t1p1} &amp; {t1p2}</span>
             <span className="text-gray-300">—</span>
-            <span className="truncate text-right">{match.team2_player1_name} &amp; {match.team2_player2_name}</span>
+            <span className="truncate text-right">{t2p1} &amp; {t2p2}</span>
           </div>
           <div className="flex items-center gap-2">
             <input
@@ -136,11 +137,11 @@ export default function ScoreEntry({
         <div className="space-y-2">
           <div className="grid grid-cols-[1fr,auto,1fr] items-center gap-2">
             <p className="text-sm font-medium text-gray-700">
-              {match.team1_player1_name} & {match.team1_player2_name}
+              {t1p1} & {t1p2}
             </p>
             <span className="text-gray-300 text-xs">vs</span>
             <p className="text-sm font-medium text-gray-700 text-right">
-              {match.team2_player1_name} & {match.team2_player2_name}
+              {t2p1} & {t2p2}
             </p>
           </div>
           {canEdit ? (

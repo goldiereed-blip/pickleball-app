@@ -91,9 +91,13 @@ export default function GamePage() {
   // Non-member redirect: only check once after initial load
   const redirectChecked = useRef(false);
 
+  // Track editing state in a ref so fetchData doesn't need it as a dependency
+  const editingMatchRef = useRef<string | null>(null);
+  useEffect(() => { editingMatchRef.current = editingMatch; }, [editingMatch]);
+
   const deviceId = typeof window !== 'undefined' ? getDeviceId() : '';
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (background = false) => {
     try {
       const [gameRes, playersRes, scheduleRes, rankingsRes, teamsRes, divisionsRes] = await Promise.all([
         fetch(`/api/games/${code}`),
@@ -121,31 +125,56 @@ export default function GamePage() {
         ]);
 
       setGame(gameData);
-      setPlayers(playersData);
-      setRounds(scheduleData);
-      setRankings(rankingsData);
+      // Guard: API may return an error object instead of an array on transient failures
+      if (Array.isArray(playersData)) setPlayers(playersData);
+      // Skip rounds update during background polls while user is actively entering a score
+      // to prevent pulling data out from under an open score entry form
+      if (Array.isArray(scheduleData) && !(background && editingMatchRef.current)) {
+        setRounds(scheduleData);
+      }
+      if (Array.isArray(rankingsData)) setRankings(rankingsData);
       if (Array.isArray(teamsData)) setTeams(teamsData);
       if (Array.isArray(divisionsData)) setDivisions(divisionsData);
 
-      const myPlayer = playersData.find(
+      const myPlayer = Array.isArray(playersData) ? playersData.find(
         (p: Player) => (user && p.user_id === user.id) || p.claimed_by === deviceId
-      );
+      ) : undefined;
       if (myPlayer) {
         setClaimedPlayerId(myPlayer.id);
         setSelectedPlayerId(myPlayer.id);
       }
 
       setLoading(false);
-    } catch {
-      setError('Failed to load game data');
-      setLoading(false);
+    } catch (e) {
+      if (!background) {
+        // Initial load failure — show error state
+        setError('Failed to load game data');
+        setLoading(false);
+      } else {
+        // Background poll failure — keep last good data visible, retry next tick
+        console.warn('[GamePage] Background refresh failed, keeping last data:', e instanceof Error ? e.message : e);
+      }
     }
   }, [code, deviceId]);
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 5000);
-    return () => clearInterval(interval);
+
+    // Poll every 30s; skip the tick if the tab is hidden to reduce load
+    const interval = setInterval(() => {
+      if (!document.hidden) fetchData(true);
+    }, 30000);
+
+    // Immediately refresh when the user switches back to this tab
+    const onVisibilityChange = () => {
+      if (!document.hidden) fetchData(true);
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, [fetchData]);
 
   // Redirect non-members to the join page (handles direct URL sharing)

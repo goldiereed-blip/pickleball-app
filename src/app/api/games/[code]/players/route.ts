@@ -31,7 +31,7 @@ export async function GET(
 
     return NextResponse.json(players.rows);
   } catch (e: unknown) {
-    console.error('GET /api/games/[code]/players error:', e);
+    console.error(`GET /api/games/${params.code}/players error:`, e instanceof Error ? e.message : e);
     return NextResponse.json(
       { error: e instanceof Error ? e.message : 'Internal server error' },
       { status: 500 }

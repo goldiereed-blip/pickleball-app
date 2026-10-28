@@ -92,7 +92,7 @@ export async function GET(
 
     return NextResponse.json(result);
   } catch (e: unknown) {
-    console.error('GET /api/games/[code]/schedule error:', e);
+    console.error(`GET /api/games/${params.code}/schedule error:`, e instanceof Error ? e.message : e);
     return NextResponse.json(
       { error: e instanceof Error ? e.message : 'Internal server error' },
       { status: 500 }
@@ -283,7 +283,7 @@ export async function POST(
 
     return NextResponse.json({ rounds: totalRounds, message: 'Schedule generated' });
   } catch (e: unknown) {
-    console.error('POST /api/games/[code]/schedule error:', e);
+    console.error(`POST /api/games/${params.code}/schedule error:`, e instanceof Error ? e.message : e);
     return NextResponse.json(
       { error: e instanceof Error ? e.message : 'Internal server error' },
       { status: 500 }

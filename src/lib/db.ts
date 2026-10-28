@@ -1,23 +1,88 @@
-import { createClient, type Client } from '@libsql/client';
+import { createClient, type Client, type InStatement, type ResultSet } from '@libsql/client';
 
-let client: Client | null = null;
+// ---------------------------------------------------------------------------
+// Retry logic for transient Turso / network errors
+// ---------------------------------------------------------------------------
 
-export function getDb(): Client {
-  if (client) return client;
+const TRANSIENT_PATTERNS = [
+  'econnreset',
+  'socket hang up',
+  'etimedout',
+  'fetch failed',
+  'network error',
+  'connection refused',
+  ' 502',
+  ' 503',
+  ' 504',
+];
 
+function isTransient(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return TRANSIENT_PATTERNS.some((p) => msg.includes(p));
+}
+
+async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
+  const delays = [100, 300, 700]; // ms between attempts 1→2, 2→3, 3→4
+  for (let attempt = 0; attempt < delays.length; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (!isTransient(err)) throw err;
+      console.warn(
+        `[db] Transient error on attempt ${attempt + 1}, retrying in ${delays[attempt]}ms:`,
+        err instanceof Error ? err.message : err,
+      );
+      await new Promise((r) => setTimeout(r, delays[attempt]));
+    }
+  }
+  // Final attempt — throw naturally if it fails
+  return fn();
+}
+
+// ---------------------------------------------------------------------------
+// Client singleton
+// ---------------------------------------------------------------------------
+
+let rawClient: Client | null = null;
+let wrappedClient: Client | null = null;
+
+function createRawClient(): Client {
+  if (rawClient) return rawClient;
   if (process.env.TURSO_DATABASE_URL) {
-    client = createClient({
+    rawClient = createClient({
       url: process.env.TURSO_DATABASE_URL,
       authToken: process.env.TURSO_AUTH_TOKEN,
     });
   } else {
-    // Local development: use a local SQLite file
-    client = createClient({
-      url: 'file:local.db',
-    });
+    rawClient = createClient({ url: 'file:local.db' });
   }
+  return rawClient;
+}
 
-  return client;
+/**
+ * Returns the database client with automatic retry on transient network
+ * errors (ECONNRESET, socket hang up, ETIMEDOUT, etc.).
+ *
+ * All existing `db.execute(...)` call-sites get retry for free via the
+ * Proxy — no changes required in route files.
+ */
+export function getDb(): Client {
+  if (wrappedClient) return wrappedClient;
+  const raw = createRawClient();
+  wrappedClient = new Proxy(raw, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+      if (prop === 'execute' && typeof value === 'function') {
+        // Cast via a concrete overload type to avoid TS overload-resolution picking
+        // the `(sql: string, args?) => ...` variant instead of `(stmt: InStatement) => ...`
+        type ExecFn = (stmt: InStatement) => Promise<ResultSet>;
+        return (stmt: InStatement) =>
+          withRetry(() => (value as ExecFn).call(target, stmt));
+      }
+      return value;
+    },
+  });
+  return wrappedClient;
 }
 
 let initialized = false;
