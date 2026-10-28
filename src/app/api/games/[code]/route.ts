@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb, initDb } from '@/lib/db';
 import { getCallerRole, canManage } from '@/lib/api-permissions';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { code: string } }
@@ -23,7 +26,9 @@ export async function GET(
       return NextResponse.json({ error: 'Game not found' }, { status: 404 });
     }
 
-    return NextResponse.json(result.rows[0]);
+    return NextResponse.json(result.rows[0], {
+      headers: { 'Cache-Control': 'no-store' },
+    });
   } catch (e: unknown) {
     console.error(`GET /api/games/${params.code} error:`, e instanceof Error ? e.message : e);
     return NextResponse.json(

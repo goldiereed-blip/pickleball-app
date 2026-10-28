@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, initDb, generateId } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { code: string } }
@@ -26,7 +29,9 @@ export async function GET(
       args: [gameId],
     });
 
-    return NextResponse.json(divisions.rows);
+    return NextResponse.json(divisions.rows, {
+      headers: { 'Cache-Control': 'no-store' },
+    });
   } catch (e: unknown) {
     console.error('GET /api/games/[code]/divisions error:', e);
     return NextResponse.json(

@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test:scheduler": "npx tsx src/lib/test-scheduler.ts"
+    "test:scheduler": "npx tsx src/lib/test-scheduler.ts",
+    "test:rankings": "npx tsx src/lib/test-rankings.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",

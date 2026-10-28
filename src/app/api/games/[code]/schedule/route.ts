@@ -3,6 +3,9 @@ import { getDb, initDb, generateId } from '@/lib/db';
 import { generateRotatingSchedule, generateFixedSchedule } from '@/lib/scheduler';
 import type { Game, Player, Division } from '@/lib/types';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { code: string } }
@@ -90,7 +93,9 @@ export async function GET(
       });
     }
 
-    return NextResponse.json(result);
+    return NextResponse.json(result, {
+      headers: { 'Cache-Control': 'no-store' },
+    });
   } catch (e: unknown) {
     console.error(`GET /api/games/${params.code}/schedule error:`, e instanceof Error ? e.message : e);
     return NextResponse.json(

@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, initDb } from '@/lib/db';
-import type { Ranking } from '@/lib/types';
+import { computeRankings } from '@/lib/rankings';
+import type { RankingPlayerRow, RankingMatchRow } from '@/lib/rankings';
+
+// Always execute dynamically — never cache rankings (they change with every score)
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export async function GET(
   request: NextRequest,
@@ -22,91 +27,43 @@ export async function GET(
 
     const gameId = game.rows[0].id as string;
 
-    // Get division info for players
-    const divisionsResult = await db.execute({
-      sql: 'SELECT id, name FROM divisions WHERE game_id = ?',
-      args: [gameId],
-    });
+    const [divisionsResult, playersResult, matchesResult] = await Promise.all([
+      db.execute({ sql: 'SELECT id, name FROM divisions WHERE game_id = ?', args: [gameId] }),
+      db.execute({
+        sql: 'SELECT id, name, division_id FROM players WHERE game_id = ? AND is_playing = 1 ORDER BY order_num ASC',
+        args: [gameId],
+      }),
+      db.execute({
+        sql: 'SELECT team1_player1_id, team1_player2_id, team2_player1_id, team2_player2_id, team1_score, team2_score FROM matches WHERE game_id = ? AND is_completed = 1',
+        args: [gameId],
+      }),
+    ]);
+
     const divisionMap = new Map<string, string>();
     for (const d of divisionsResult.rows) {
       divisionMap.set(d.id as string, d.name as string);
     }
 
-    // Get all active players
-    const players = await db.execute({
-      sql: 'SELECT id, name, division_id FROM players WHERE game_id = ? AND is_playing = 1 ORDER BY order_num ASC',
-      args: [gameId],
+    const players: RankingPlayerRow[] = playersResult.rows.map((p) => ({
+      id: p.id as string,
+      name: p.name as string,
+      division_id: p.division_id as string | null,
+    }));
+
+    const matches: RankingMatchRow[] = matchesResult.rows.map((m) => ({
+      team1_player1_id: m.team1_player1_id as string,
+      team1_player2_id: m.team1_player2_id as string,
+      team2_player1_id: m.team2_player1_id as string,
+      team2_player2_id: m.team2_player2_id as string,
+      team1_score: m.team1_score as number,
+      team2_score: m.team2_score as number,
+    }));
+
+    const rankings = computeRankings(players, matches, divisionMap);
+
+    return NextResponse.json(rankings, {
+      headers: { 'Cache-Control': 'no-store' },
     });
-
-    // Get all completed matches
-    const matches = await db.execute({
-      sql: 'SELECT * FROM matches WHERE game_id = ? AND is_completed = 1',
-      args: [gameId],
-    });
-
-    // Calculate rankings
-    const stats = new Map<
-      string,
-      { wins: number; losses: number; pointsFor: number; pointsAgainst: number; gamesPlayed: number }
-    >();
-
-    for (const p of players.rows) {
-      stats.set(p.id as string, { wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, gamesPlayed: 0 });
-    }
-
-    for (const m of matches.rows) {
-      const t1Score = m.team1_score as number;
-      const t2Score = m.team2_score as number;
-      const t1Won = t1Score > t2Score;
-
-      const team1 = [m.team1_player1_id as string, m.team1_player2_id as string];
-      const team2 = [m.team2_player1_id as string, m.team2_player2_id as string];
-
-      for (const pid of team1) {
-        const s = stats.get(pid);
-        if (!s) continue;
-        s.gamesPlayed++;
-        s.pointsFor += t1Score;
-        s.pointsAgainst += t2Score;
-        if (t1Won) s.wins++;
-        else if (t2Score > t1Score) s.losses++;
-      }
-
-      for (const pid of team2) {
-        const s = stats.get(pid);
-        if (!s) continue;
-        s.gamesPlayed++;
-        s.pointsFor += t2Score;
-        s.pointsAgainst += t1Score;
-        if (!t1Won && t2Score > t1Score) s.wins++;
-        else if (t1Won) s.losses++;
-      }
-    }
-
-    const rankings: Ranking[] = players.rows.map((p) => {
-      const s = stats.get(p.id as string)!;
-      const divId = p.division_id as string | null;
-      return {
-        player_id: p.id as string,
-        player_name: p.name as string,
-        wins: s.wins,
-        losses: s.losses,
-        points_for: s.pointsFor,
-        points_against: s.pointsAgainst,
-        point_differential: s.pointsFor - s.pointsAgainst,
-        games_played: s.gamesPlayed,
-        division_id: divId,
-        division_name: divId ? (divisionMap.get(divId) || null) : null,
-      };
-    });
-
-    // Sort: primary by wins desc, tiebreaker by point differential desc
-    rankings.sort((a, b) => {
-      if (b.wins !== a.wins) return b.wins - a.wins;
-      return b.point_differential - a.point_differential;
-    });
-
-    return NextResponse.json(rankings);
   } catch (e: unknown) {
     console.error(`GET /api/games/${params.code}/rankings error:`, e instanceof Error ? e.message : e);
     return NextResponse.json(

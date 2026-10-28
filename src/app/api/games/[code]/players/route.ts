@@ -4,6 +4,9 @@ import { getSession } from '@/lib/auth';
 import { getCallerRole, canManage } from '@/lib/api-permissions';
 import { getActivePlayerCount, getNextWaitlistPosition } from '@/lib/waitlist';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { code: string } }
@@ -29,7 +32,9 @@ export async function GET(
       args: [gameId],
     });
 
-    return NextResponse.json(players.rows);
+    return NextResponse.json(players.rows, {
+      headers: { 'Cache-Control': 'no-store' },
+    });
   } catch (e: unknown) {
     console.error(`GET /api/games/${params.code}/players error:`, e instanceof Error ? e.message : e);
     return NextResponse.json(
