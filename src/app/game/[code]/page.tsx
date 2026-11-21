@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
-import type { Game, Player, RoundWithMatches, Ranking, Division } from '@/lib/types';
+import type { Game, Player, RoundWithMatches, Ranking, Division, TeamWithPlayers } from '@/lib/types';
 
 import GameHeader from '@/components/game/GameHeader';
 import TabNav, { type Tab } from '@/components/game/TabNav';
@@ -13,7 +13,7 @@ import ScheduleTab from '@/components/game/ScheduleTab';
 import ScoresTab from '@/components/game/ScoresTab';
 import RankingsTab from '@/components/game/RankingsTab';
 import MyGamesTab from '@/components/game/MyGamesTab';
-import { RoundConfirmModal, DeleteConfirmModal, ShareModal, ReopenConfirmModal, EditSettingsModal } from '@/components/game/Modals';
+import { RoundConfirmModal, DeleteConfirmModal, ShareModal, ReopenConfirmModal, EditSettingsModal, AddRoundsModal } from '@/components/game/Modals';
 
 function getDeviceId(): string {
   if (typeof window === 'undefined') return '';
@@ -77,6 +77,10 @@ export default function GamePage() {
   const [showReopenConfirm, setShowReopenConfirm] = useState(false);
   const [reopening, setReopening] = useState(false);
 
+  // Add Rounds
+  const [showAddRounds, setShowAddRounds] = useState(false);
+  const [addingRounds, setAddingRounds] = useState(false);
+
   // Edit game settings
   const [showEditSettings, setShowEditSettings] = useState(false);
   const [editCourts, setEditCourts] = useState('');
@@ -85,8 +89,7 @@ export default function GamePage() {
   const [editError, setEditError] = useState('');
 
   // Team pairing
-  interface TeamPairing { id: string; player1_id: string; player2_id: string; player1_name: string; player2_name: string; team_name: string | null; }
-  const [teams, setTeams] = useState<TeamPairing[]>([]);
+  const [teams, setTeams] = useState<TeamWithPlayers[]>([]);
 
   // Non-member redirect: only check once after initial load
   const redirectChecked = useRef(false);
@@ -363,6 +366,26 @@ export default function GamePage() {
     }
   };
 
+  const addRounds = async (numRoundsToAdd: number) => {
+    setShowAddRounds(false);
+    setAddingRounds(true);
+    try {
+      const res = await fetch(`/api/games/${code}/schedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ append: true, num_rounds: numRoundsToAdd }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setTab('schedule');
+      fetchData();
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Failed to add rounds');
+    } finally {
+      setAddingRounds(false);
+    }
+  };
+
   const openEditSettings = () => {
     if (!game) return;
     setEditCourts(String(game.num_courts));
@@ -464,6 +487,17 @@ export default function GamePage() {
   const completedMatches = rounds.reduce((sum, r) => sum + r.matches.filter((m) => m.is_completed).length, 0);
   const totalMatches = rounds.reduce((sum, r) => sum + r.matches.length, 0);
   const isStarted = !!game?.started;
+  const allRoundsPlayed = isStarted && totalMatches > 0 && completedMatches === totalMatches && !game?.is_complete;
+
+  // Cycle length for fixed mode (used as default in Add Rounds modal)
+  const cycleLength = (() => {
+    if (!game || game.mode !== 'fixed') return suggestedRounds || 5;
+    const n = activePlayers.length;
+    const maxC = Math.min(game.num_courts, Math.floor(n / 4));
+    const numTeams = Math.floor(n / 2);
+    const totalMatchups = (numTeams * (numTeams - 1)) / 2;
+    return maxC > 0 ? Math.ceil(totalMatchups / maxC) : 5;
+  })();
   const currentPlayer = players.find((p) => (user && p.user_id === user.id) || p.claimed_by === deviceId) || null;
   const canEditScores = !!currentPlayer && (currentPlayer.waitlist_position === null || currentPlayer.waitlist_position === undefined);
   const isHostOrCohost = currentPlayer?.role === 'host' || currentPlayer?.role === 'cohost';
@@ -513,6 +547,13 @@ export default function GamePage() {
               >
                 Complete Game
               </button>
+              <button
+                onClick={() => setShowAddRounds(true)}
+                disabled={addingRounds}
+                className="w-full py-2 bg-primary-600 text-white text-sm font-semibold rounded-xl active:bg-primary-700 disabled:opacity-50"
+              >
+                {addingRounds ? 'Adding Rounds...' : 'Add Rounds'}
+              </button>
               {completedMatches === 0 ? (
                 <button
                   onClick={() => setShowReopenConfirm(true)}
@@ -560,6 +601,36 @@ export default function GamePage() {
               Delete Game
             </button>
           )}
+        </div>
+      )}
+
+      {/* All rounds played banner */}
+      {allRoundsPlayed && (
+        <div className="max-w-lg mx-auto px-4 mt-2">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center space-y-2">
+            <p className="text-sm font-semibold text-blue-800">
+              All rounds played!
+            </p>
+            <p className="text-xs text-blue-600">
+              Complete the game to lock in results, or add more rounds to keep playing.
+            </p>
+            {isHostOrCohost && (
+              <div className="flex gap-2 mt-1">
+                <button
+                  onClick={completeGame}
+                  className="flex-1 py-2 bg-green-600 text-white text-xs font-semibold rounded-xl active:bg-green-700"
+                >
+                  Complete Game
+                </button>
+                <button
+                  onClick={() => setShowAddRounds(true)}
+                  className="flex-1 py-2 bg-primary-600 text-white text-xs font-semibold rounded-xl active:bg-primary-700"
+                >
+                  Add Rounds
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -625,6 +696,8 @@ export default function GamePage() {
             completedMatches={completedMatches}
             divisions={divisions}
             code={code}
+            gameMode={game?.mode}
+            teams={teams}
           />
         )}
 
@@ -675,6 +748,15 @@ export default function GamePage() {
           qrDataUrl={qrDataUrl}
           onShareLink={shareLink}
           onClose={() => setShowShare(false)}
+        />
+      )}
+
+      {showAddRounds && game && (
+        <AddRoundsModal
+          gameMode={game.mode}
+          cycleLength={cycleLength}
+          onAdd={addRounds}
+          onClose={() => setShowAddRounds(false)}
         />
       )}
 

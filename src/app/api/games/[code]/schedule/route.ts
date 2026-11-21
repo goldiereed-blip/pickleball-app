@@ -147,22 +147,99 @@ export async function POST(
       );
     }
 
-    // Delete existing schedule
-    await db.execute({ sql: 'DELETE FROM matches WHERE game_id = ?', args: [game.id] });
-    await db.execute({ sql: 'DELETE FROM rounds WHERE game_id = ?', args: [game.id] });
-
-    // Check for num_rounds limit
+    // Parse request body
     let numRoundsLimit: number | null = null;
+    let appendMode = false;
+    let appendAdditionalRounds: number | null = null;
     try {
       const body = await request.json();
       if (typeof body.num_rounds === 'number' && body.num_rounds > 0) {
         numRoundsLimit = body.num_rounds;
+      }
+      if (body.append === true && typeof body.num_rounds === 'number' && body.num_rounds > 0) {
+        appendMode = true;
+        appendAdditionalRounds = body.num_rounds;
       }
     } catch {
       // No body provided
     }
     if (!numRoundsLimit && game.num_rounds) {
       numRoundsLimit = game.num_rounds as unknown as number;
+    }
+
+    // Delete existing schedule only when regenerating from scratch (not appending)
+    if (!appendMode) {
+      await db.execute({ sql: 'DELETE FROM matches WHERE game_id = ?', args: [game.id] });
+      await db.execute({ sql: 'DELETE FROM rounds WHERE game_id = ?', args: [game.id] });
+    }
+
+    // ── Append mode: add rounds to an in-progress game without touching existing ones ──
+    if (appendMode && appendAdditionalRounds) {
+      const existingResult = await db.execute({
+        sql: 'SELECT COUNT(*) as cnt, MAX(round_number) as max_rn FROM rounds WHERE game_id = ?',
+        args: [game.id],
+      });
+      const currentRoundCount = (existingResult.rows[0].cnt as number) ?? 0;
+      const currentMaxRound = (existingResult.rows[0].max_rn as number | null) ?? 0;
+      const totalRounds = currentMaxRound + appendAdditionalRounds;
+
+      const playersResult2 = await db.execute({
+        sql: 'SELECT * FROM players WHERE game_id = ? AND is_playing = 1 ORDER BY order_num ASC',
+        args: [game.id],
+      });
+      const appendPlayers = playersResult2.rows as unknown as Player[];
+      const appendPlayerIds = appendPlayers.map((p) => p.id);
+
+      let newRounds: ReturnType<typeof generateFixedSchedule> = [];
+
+      if (game.mode === 'fixed') {
+        const teamsResult2 = await db.execute({
+          sql: 'SELECT player1_id, player2_id FROM teams WHERE game_id = ?',
+          args: [game.id],
+        });
+        const appendTeamPairings: [string, string][] = teamsResult2.rows.map((t) => [
+          t.player1_id as string, t.player2_id as string,
+        ]);
+        // Re-generate the full schedule up to totalRounds; take only the new tail.
+        const fullSchedule = generateFixedSchedule(
+          appendPlayerIds, game.num_courts,
+          appendTeamPairings.length > 0 ? appendTeamPairings : undefined,
+          totalRounds
+        );
+        newRounds = fullSchedule.slice(currentRoundCount);
+      } else {
+        // Rotating: generate the additional rounds fresh with correct starting numbers.
+        const freshRounds = generateRotatingSchedule(appendPlayerIds, game.num_courts, appendAdditionalRounds);
+        // Re-number to continue from where existing rounds left off.
+        newRounds = freshRounds.map((r, i) => ({ ...r, roundNumber: currentMaxRound + i + 1 }));
+      }
+
+      for (const round of newRounds) {
+        const roundId = generateId();
+        await db.execute({
+          sql: 'INSERT INTO rounds (id, game_id, round_number) VALUES (?, ?, ?)',
+          args: [roundId, game.id, round.roundNumber],
+        });
+        for (const match of round.matches) {
+          const matchId = generateId();
+          await db.execute({
+            sql: `INSERT INTO matches (id, round_id, game_id, court_number,
+                  team1_player1_id, team1_player2_id, team2_player1_id, team2_player2_id)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            args: [
+              matchId, roundId, game.id, match.court,
+              match.team1[0], match.team1[1], match.team2[0], match.team2[1],
+            ],
+          });
+        }
+      }
+
+      await db.execute({
+        sql: 'UPDATE games SET num_rounds = ? WHERE id = ?',
+        args: [totalRounds, game.id],
+      });
+
+      return NextResponse.json({ rounds: totalRounds, added: newRounds.length, message: 'Rounds added' });
     }
 
     // Check for divisions
@@ -193,12 +270,7 @@ export async function POST(
           const teamPairings: [string, string][] = teamsResult.rows
             .filter((t) => divPlayerIdSet.has(t.player1_id as string) && divPlayerIdSet.has(t.player2_id as string))
             .map((t) => [t.player1_id as string, t.player2_id as string]);
-          schedule = generateFixedSchedule(divPlayerIds, divNumCourts, teamPairings.length > 0 ? teamPairings : undefined);
-          // Slice to requested round count if needed (circle method produces a fixed count)
-          if (numRoundsLimit && schedule.length > numRoundsLimit) {
-            schedule = schedule.slice(0, numRoundsLimit);
-            schedule.forEach((r, i) => { r.roundNumber = i + 1; });
-          }
+          schedule = generateFixedSchedule(divPlayerIds, divNumCourts, teamPairings.length > 0 ? teamPairings : undefined, numRoundsLimit ?? undefined);
         } else {
           // Pass numRoundsLimit directly so the generator produces exactly that many rounds
           // with full retry validation — no post-generation slicing or padding needed.
@@ -244,12 +316,7 @@ export async function POST(
         const teamPairings: [string, string][] = teamsResult.rows.map((t) => [
           t.player1_id as string, t.player2_id as string,
         ]);
-        schedule = generateFixedSchedule(playerIds, game.num_courts, teamPairings.length > 0 ? teamPairings : undefined);
-        // Slice to requested round count if needed
-        if (numRoundsLimit && schedule.length > numRoundsLimit) {
-          schedule = schedule.slice(0, numRoundsLimit);
-          schedule.forEach((r, i) => { r.roundNumber = i + 1; });
-        }
+        schedule = generateFixedSchedule(playerIds, game.num_courts, teamPairings.length > 0 ? teamPairings : undefined, numRoundsLimit ?? undefined);
       } else {
         // Pass numRoundsLimit directly so the generator produces exactly that many rounds
         // with full retry validation — no post-generation slicing or padding needed.

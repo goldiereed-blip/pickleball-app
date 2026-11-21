@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type { Game, Player } from '@/lib/types';
 
 interface RoundConfirmModalProps {
@@ -22,11 +23,19 @@ export function RoundConfirmModal({
   onClose,
 }: RoundConfirmModalProps) {
   const n = activePlayers.length;
+  const isFixed = game.mode === 'fixed';
   const maxCourts = Math.min(game.num_courts, Math.floor(n / 4));
   const activePlayersPerRound = maxCourts * 4;
-  const hasByes = n > game.num_courts * 4;
+  const hasByes = !isFixed && n > game.num_courts * 4;
   const byesPerRound = hasByes ? n - activePlayersPerRound : 0;
   const approxGamesPerPlayer = Math.round((selectedRounds * activePlayersPerRound) / n);
+
+  // For fixed mode: cycle length = suggestedRounds; show how many cycles selected rounds represents
+  const cycleCount = isFixed && suggestedRounds > 0
+    ? Math.ceil(selectedRounds / suggestedRounds)
+    : null;
+
+  const maxRounds = isFixed ? suggestedRounds * 5 : 50;
 
   return (
     <div
@@ -43,7 +52,10 @@ export function RoundConfirmModal({
         <div className="text-center">
           <p className="text-sm text-gray-500 mb-3">
             Recommended: <span className="font-bold text-primary-700">{suggestedRounds}</span> rounds
-            &nbsp;&mdash; each player faces everyone twice
+            &nbsp;&mdash;{' '}
+            {isFixed
+              ? 'one full cycle — each team plays every other team once'
+              : 'each player faces everyone twice'}
           </p>
           <label className="block text-sm font-medium text-gray-600 mb-2">
             Number of Rounds
@@ -55,11 +67,16 @@ export function RoundConfirmModal({
             >
               -
             </button>
-            <span className="text-3xl font-bold text-primary-700 w-16 text-center">
-              {selectedRounds}
-            </span>
+            <div className="text-center w-20">
+              <span className="text-3xl font-bold text-primary-700">{selectedRounds}</span>
+              {cycleCount !== null && (
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {cycleCount} cycle{cycleCount !== 1 ? 's' : ''}
+                </p>
+              )}
+            </div>
             <button
-              onClick={() => setSelectedRounds(Math.min(50, selectedRounds + 1))}
+              onClick={() => setSelectedRounds(Math.min(maxRounds, selectedRounds + 1))}
               className="w-12 h-12 rounded-xl bg-gray-200 text-xl font-bold active:bg-gray-300 select-none"
             >
               +
@@ -69,20 +86,29 @@ export function RoundConfirmModal({
 
         {/* Breakdown */}
         <div className="bg-gray-50 rounded-xl p-3 space-y-1.5">
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-500">Players active per round</span>
-            <span className="font-medium">{activePlayersPerRound} of {n}</span>
-          </div>
+          {!isFixed && (
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">Players active per round</span>
+              <span className="font-medium">{activePlayersPerRound} of {n}</span>
+            </div>
+          )}
           {hasByes && (
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">Sitting out per round</span>
               <span className="font-medium">{byesPerRound}</span>
             </div>
           )}
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-500">Est. games per player</span>
-            <span className="font-medium">~{approxGamesPerPlayer}</span>
-          </div>
+          {isFixed ? (
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">Teams</span>
+              <span className="font-medium">{Math.floor(n / 2)}</span>
+            </div>
+          ) : (
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-500">Est. games per player</span>
+              <span className="font-medium">~{approxGamesPerPlayer}</span>
+            </div>
+          )}
         </div>
 
         {hasByes && (
@@ -97,6 +123,74 @@ export function RoundConfirmModal({
         <div className="space-y-2">
           <button onClick={onConfirm} className="btn-primary">
             Start with {selectedRounds} Rounds
+          </button>
+          <button onClick={onClose} className="btn-secondary">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface AddRoundsModalProps {
+  gameMode: 'rotating' | 'fixed';
+  cycleLength: number;
+  onAdd: (n: number) => void;
+  onClose: () => void;
+}
+
+export function AddRoundsModal({ gameMode, cycleLength, onAdd, onClose }: AddRoundsModalProps) {
+  const [rounds, setRounds] = useState(cycleLength > 0 ? cycleLength : 5);
+  const isFixed = gameMode === 'fixed';
+  const cycleCount = isFixed && cycleLength > 0 ? Math.ceil(rounds / cycleLength) : null;
+  const maxRounds = isFixed ? cycleLength * 5 : 50;
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl p-6 max-w-sm w-full space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-xl font-bold text-center">Add Rounds</h2>
+        <p className="text-sm text-gray-500 text-center">
+          Existing rounds and scores are untouched. New rounds will be appended.
+        </p>
+
+        <div className="text-center">
+          <label className="block text-sm font-medium text-gray-600 mb-2">
+            Rounds to add
+          </label>
+          <div className="flex items-center justify-center gap-3">
+            <button
+              onClick={() => setRounds(Math.max(1, rounds - 1))}
+              className="w-12 h-12 rounded-xl bg-gray-200 text-xl font-bold active:bg-gray-300 select-none"
+            >
+              -
+            </button>
+            <div className="text-center w-20">
+              <span className="text-3xl font-bold text-primary-700">{rounds}</span>
+              {cycleCount !== null && (
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {cycleCount} cycle{cycleCount !== 1 ? 's' : ''}
+                </p>
+              )}
+            </div>
+            <button
+              onClick={() => setRounds(Math.min(maxRounds, rounds + 1))}
+              className="w-12 h-12 rounded-xl bg-gray-200 text-xl font-bold active:bg-gray-300 select-none"
+            >
+              +
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <button onClick={() => onAdd(rounds)} className="btn-primary">
+            Add {rounds} Round{rounds !== 1 ? 's' : ''}
           </button>
           <button onClick={onClose} className="btn-secondary">
             Cancel

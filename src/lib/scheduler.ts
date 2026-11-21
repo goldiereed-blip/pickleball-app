@@ -666,12 +666,21 @@ export function generateRotatingSchedule(
 /**
  * Generate a fixed-partners schedule using the circle method.
  * If teamPairings are provided those are used; otherwise players are paired
- * in order: (0,1), (2,3), (4,5), … Each team plays every other team once.
+ * in order: (0,1), (2,3), (4,5), … Each team plays every other team once per cycle.
+ *
+ * @param numRounds  Total schedule rounds to produce. When omitted, generates exactly
+ *                   one full round-robin cycle (original behaviour).
+ *                   When greater than one cycle, additional cycles are appended with a
+ *                   1-step rotation so the first round of each new cycle uses a
+ *                   different RR-round matchup than the last round of the previous
+ *                   cycle — guaranteeing no team faces the same opponent back-to-back
+ *                   at cycle boundaries.
  */
 export function generateFixedSchedule(
   playerIds: string[],
   numCourts: number,
-  teamPairings?: [string, string][]
+  teamPairings?: [string, string][],
+  numRounds?: number
 ): ScheduleRound[] {
   const n = playerIds.length;
   if (n < 4 || n % 2 !== 0) return [];
@@ -691,6 +700,7 @@ export function generateFixedSchedule(
   const isEven = T % 2 === 0;
   const numRoundsRR = isEven ? T - 1 : T;
 
+  // Build the one-cycle list of RR round matchups (circle algorithm).
   const allRoundMatchups: [number, number][][] = [];
 
   if (isEven) {
@@ -716,13 +726,14 @@ export function generateFixedSchedule(
     }
   }
 
+  // Helper: append one RR-round's worth of schedule rounds (batched by maxCourts).
   const rounds: ScheduleRound[] = [];
   let roundNum = 1;
 
-  for (const rrMatchups of allRoundMatchups) {
+  const pushRRRound = (rrMatchups: [number, number][]) => {
     const validMatchups = rrMatchups.filter(([a, b]) => a !== b);
-
     for (let i = 0; i < validMatchups.length; i += maxCourts) {
+      if (numRounds !== undefined && rounds.length >= numRounds) return;
       const batch = validMatchups.slice(i, i + maxCourts);
       const matches: ScheduleMatch[] = batch.map(([a, b], idx) => ({
         court: idx + 1,
@@ -741,8 +752,26 @@ export function generateFixedSchedule(
           sittingPlayers.push(teams[t][0], teams[t][1]);
         }
       }
-
       rounds.push({ roundNumber: roundNum++, matches, sitting: sittingPlayers });
+    }
+  };
+
+  if (numRounds === undefined) {
+    // Original behaviour: exactly one full cycle.
+    for (const rrMatchups of allRoundMatchups) {
+      pushRRRound(rrMatchups);
+    }
+  } else {
+    // Multi-cycle: rotate the starting RR-round by 1 each cycle so the
+    // last schedule round of cycle N and the first of cycle N+1 always come
+    // from different RR rounds → no same team-vs-team matchup back-to-back.
+    let cycleOffset = 0;
+    while (rounds.length < numRounds) {
+      for (let rrIdx = 0; rrIdx < numRoundsRR; rrIdx++) {
+        if (rounds.length >= numRounds) break;
+        pushRRRound(allRoundMatchups[(cycleOffset + rrIdx) % numRoundsRR]);
+      }
+      cycleOffset = (cycleOffset + 1) % numRoundsRR;
     }
   }
 

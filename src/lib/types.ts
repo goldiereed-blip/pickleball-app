@@ -70,6 +70,11 @@ export interface Team {
   team_name: string | null;
 }
 
+export interface TeamWithPlayers extends Team {
+  player1_name: string;
+  player2_name: string;
+}
+
 export interface Round {
   id: string;
   game_id: string;
